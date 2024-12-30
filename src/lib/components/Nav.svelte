@@ -1,38 +1,68 @@
 <script lang="ts">
-  import { currentRoute } from '../router';
-  import { supabase } from '../supabase';
+  import { onMount } from 'svelte';
+  import { supabase } from '$lib/supabase';
+
+  let isLoggedIn = false;
+  let loading = false;
+
+  onMount(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    isLoggedIn = !!session;
+
+    supabase.auth.onAuthStateChange((_event, session) => {
+      isLoggedIn = !!session;
+    });
+  });
+
+  async function handleLogout() {
+    try {
+      loading = true;
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Error logging out:', error);
+    } finally {
+      loading = false;
+    }
+  }
 </script>
 
-<nav class="bg-white border-b border-gray-100">
+<nav class="bg-white shadow-sm">
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
     <div class="flex justify-between h-16">
       <div class="flex">
-        <div class="flex-shrink-0 flex items-center">
-          <a href="#/" class="text-xl font-bold text-indigo-600">MindFlow</a>
-        </div>
+        <a href="/" class="flex items-center">
+          <span class="text-2xl font-bold text-indigo-600">MindFlow</span>
+        </a>
       </div>
+
       <div class="flex items-center">
-        {#if $currentRoute === '/'}
+        {#if isLoggedIn}
           <a 
-            href="#/login"
-            class="text-gray-600 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+            href="/mindmaps" 
+            class="mr-4 text-gray-700 hover:text-indigo-600"
           >
-            Sign In
+            My Mindmaps
+          </a>
+          <button
+            on:click={handleLogout}
+            disabled={loading}
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            {loading ? 'Logging out...' : 'Logout'}
+          </button>
+        {:else}
+          <a
+            href="/login"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            Sign in
           </a>
           <a
-            href="#/register"
-            class="ml-4 px-4 py-2 rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+            href="/register"
+            class="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
           >
-            Sign Up Free
+            Get Started
           </a>
-        {:else if $currentRoute !== '/login' && $currentRoute !== '/register'}
-          <a href="#/mindmaps" class="text-gray-600 hover:text-gray-900 px-3 py-2">My Mindmaps</a>
-          <button
-            on:click={() => supabase.auth.signOut()}
-            class="ml-4 text-gray-600 hover:text-gray-900 px-3 py-2"
-          >
-            Sign Out
-          </button>
         {/if}
       </div>
     </div>

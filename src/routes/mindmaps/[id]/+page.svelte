@@ -15,6 +15,8 @@
 
   async function loadMindmap() {
     try {
+      console.log('Loading mindmap:', mindmapId);
+      
       // Load mindmap details
       const { data: mindmapData, error: mindmapError } = await supabase
         .from('mindmaps')
@@ -22,8 +24,12 @@
         .eq('id', mindmapId)
         .single();
 
-      if (mindmapError) throw mindmapError;
+      if (mindmapError) {
+        console.error('Mindmap error:', mindmapError);
+        throw mindmapError;
+      }
       mindmap = mindmapData;
+      console.log('Loaded mindmap:', mindmap);
 
       // Load nodes
       const { data: nodesData, error: nodesError } = await supabase
@@ -31,8 +37,12 @@
         .select('*')
         .eq('mindmap_id', mindmapId);
 
-      if (nodesError) throw nodesError;
-      nodes = nodesData;
+      if (nodesError) {
+        console.error('Nodes error:', nodesError);
+        throw nodesError;
+      }
+      nodes = nodesData || [];
+      console.log('Loaded nodes:', nodes);
 
       // Create links from parent-child relationships
       links = nodes
@@ -41,9 +51,11 @@
           source: node.parent_id!,
           target: node.id
         }));
+      console.log('Created links:', links);
 
     } catch (err: any) {
       error = err.message;
+      console.error('Error loading mindmap:', err);
     }
   }
 
@@ -75,6 +87,23 @@
       selectedNodeId = null;
     } catch (err: any) {
       error = err.message;
+    }
+  }
+
+  async function updateNodePosition(node: Node) {
+    try {
+      const { error: err } = await supabase
+        .from('mindmap_nodes')
+        .update({
+          position_x: node.position_x,
+          position_y: node.position_y
+        })
+        .eq('id', node.id);
+
+      if (err) throw err;
+    } catch (err: any) {
+      error = err.message;
+      console.error('Error updating node position:', err);
     }
   }
 
@@ -117,7 +146,7 @@
   });
 </script>
 
-<div class="space-y-6">
+<div class="space-y-6 p-6">
   <div class="flex justify-between items-center">
     <h1 class="text-2xl font-semibold text-gray-900">
       {mindmap?.title || 'Loading...'}
@@ -129,7 +158,6 @@
       <p class="text-red-700">{error}</p>
     </div>
   {/if}
-
   <div class="bg-white shadow sm:rounded-lg p-4">
     <form on:submit|preventDefault={addNode} class="flex gap-4">
       <input
@@ -149,14 +177,19 @@
       </select>
       <button
         type="submit"
-        class="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+        disabled={!newNodeContent.trim()}
+        class="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
       >
         Add Node
       </button>
     </form>
   </div>
 
-  <div class="bg-white shadow sm:rounded-lg">
-    <MindMap {nodes} {links} />
+  <div class="w-full">
+    <MindMap 
+      {nodes} 
+      {links} 
+      onNodePositionUpdate={updateNodePosition} 
+    />
   </div>
 </div>

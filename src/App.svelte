@@ -1,8 +1,9 @@
 <script>
-  import Layout from './lib/components/Layout.svelte';
-  import Router from './lib/components/Router.svelte';
+  import Nav from '$lib/components/Nav.svelte';
+  import Router from '$lib/components/Router.svelte';
 </script>
 
-<Layout>
+<div class="min-h-screen bg-gray-50">
+  <Nav />
   <Router />
-</Layout>
+</div>

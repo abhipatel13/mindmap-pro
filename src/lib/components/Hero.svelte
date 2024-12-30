@@ -1,12 +1,20 @@
 <script lang="ts">
-  import { navigate } from '../router';
+  import { onMount } from 'svelte';
+  import { supabase } from '$lib/supabase';
+
+  let isLoggedIn = false;
+
+  onMount(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    isLoggedIn = !!session;
+  });
 
   function handleGetStarted() {
-    navigate('/register');
+    window.location.href = isLoggedIn ? '/mindmaps' : '/register';
   }
   
   function handleSignIn() {
-    navigate('/login');
+    window.location.href = '/login';
   }
 </script>
 
@@ -27,14 +35,16 @@
           on:click={handleGetStarted}
           class="px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:opacity-90 font-semibold transform transition hover:scale-105 shadow-lg"
         >
-          Get Started Free
+          {isLoggedIn ? 'Go to Mindmaps' : 'Get Started Free'}
         </button>
-        <button
-          on:click={handleSignIn}
-          class="px-8 py-4 bg-white text-gray-900 rounded-lg hover:bg-gray-50 font-semibold border-2 border-gray-200 transform transition hover:scale-105 shadow-sm"
-        >
-          Sign In
-        </button>
+        {#if !isLoggedIn}
+          <button
+            on:click={handleSignIn}
+            class="px-8 py-4 bg-white text-gray-900 rounded-lg hover:bg-gray-50 font-semibold border-2 border-gray-200 transform transition hover:scale-105 shadow-sm"
+          >
+            Sign In
+          </button>
+        {/if}
       </div>
     </div>
   </div>
