@@ -17,6 +17,7 @@
     "vite": "^6.0.5"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.47.10"
+    "@supabase/supabase-js": "^2.47.10",
+    "@sveltejs/kit": "^2.15.1"
   }
 }

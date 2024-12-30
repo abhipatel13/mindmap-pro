@@ -39,3 +39,33 @@ export interface Collaborator {
   role: 'viewer' | 'editor';
   created_at: string;
 }
+
+export type Database = {
+  public: {
+    Tables: {
+      profiles: {
+        Row: {
+          id: string
+          username: string
+          full_name: string
+          created_at?: string
+          updated_at?: string
+        }
+        Insert: {
+          id: string
+          username: string
+          full_name: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          username?: string
+          full_name?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+    }
+  }
+}
