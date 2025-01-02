@@ -33,18 +33,18 @@
       if (signUpError) throw signUpError;
 
       if (user) {
-        // Create profile
+        // Update profile with username and full_name
         const { error: profileError } = await supabase
           .from('profiles')
-          .insert([
-            {
-              id: user.id,
-              username,
-              full_name: fullName,
-            }
-          ]);
+          .update({
+            username,
+            full_name: fullName,
+          })
+          .eq('id', user.id);
 
         if (profileError) throw profileError;
+
+        console.log('User registered:', user);
         
         window.location.href = '/mindmaps';
       }

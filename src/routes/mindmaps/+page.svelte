@@ -18,14 +18,50 @@
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      const { data, error: err } = await supabase
+      console.log('User:', user.id);
+
+      // Load owned mindmaps
+      const { data: ownedMaps, error: ownedErr } = await supabase
         .from('mindmaps')
         .select('*')
         .eq('owner_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (err) throw err;
-      mindmaps = data || [];
+      // Load shared mindmaps
+      const { data: sharedMaps, error: sharedErr } = await supabase
+        .from('mindmap_collaborators')
+        .select(`
+          mindmap_id,
+          role,
+          mindmaps!mindmap_collaborators_mindmap_id_fkey (
+            id,
+            title,
+            created_at,
+            owner_id
+          )
+        `)
+        .eq('user_id', user.id);
+
+      if (ownedErr || sharedErr) throw ownedErr || sharedErr;
+
+      // After getting the data, fetch owner emails separately if needed
+      if (sharedMaps) {
+        const ownerIds = [...new Set(sharedMaps.map(sm => sm.mindmaps.owner_id))];
+        const { data: owners } = await supabase
+          .from('profiles')
+          .select('id, email')
+          .in('id', ownerIds);
+
+        mindmaps = [
+          ...(ownedMaps || []),
+          ...(sharedMaps.map(sm => ({
+            ...sm.mindmaps,
+            isShared: true,
+            role: sm.role,
+            owner: owners?.find(o => o.id === sm.mindmaps.owner_id)
+          })) || [])
+        ];
+      }
     } catch (err: any) {
       error = err.message;
       console.error('Error loading mindmaps:', err);

@@ -4,6 +4,7 @@
   import { supabase } from '$lib/supabase';
   import MindMap from '$lib/components/MindMap.svelte';
   import type { Node, Link, MindMap as MindMapType } from '$lib/types';
+  import InviteUsers from '$lib/components/InviteUsers.svelte';
 
   const mindmapId = $page.params.id;
   let mindmap: MindMapType | null = null;
@@ -12,6 +13,7 @@
   let newNodeContent = '';
   let selectedNodeId: string | null = null;
   let error = '';
+  let isOwner = false;
 
   async function loadMindmap() {
     try {
@@ -107,9 +109,21 @@
     }
   }
 
+  async function checkOwnership() {
+    const { data: mindmap } = await supabase
+      .from('mindmaps')
+      .select('owner_id')
+      .eq('id', mindmapId)
+      .single();
+
+    const session = await supabase.auth.getSession();
+    isOwner = mindmap?.owner_id === session.data.session?.user.id;
+  }
+
   // Subscribe to real-time updates
   onMount(() => {
     loadMindmap();
+    checkOwnership();
 
     const nodesSubscription = supabase
       .channel('mindmap-nodes')
@@ -189,7 +203,14 @@
     <MindMap 
       {nodes} 
       {links} 
+      {mindmapId}
       onNodePositionUpdate={updateNodePosition} 
     />
   </div>
+
+  {#if isOwner}
+    <div class="w-96">
+      <InviteUsers {mindmapId} />
+    </div>
+  {/if}
 </div>
