@@ -20,12 +20,13 @@ export interface Node {
   mindmap_id: string;
   parent_id?: string | null;
   content: string;
-  position_x: number;
-  position_y: number;
+  position_x?: number;
+  position_y?: number;
   x?: number;
   y?: number;
-  fx?: number | null;
-  fy?: number | null;
+  userId?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Link {
