@@ -5,19 +5,24 @@
   import { createMindmapWebSocket, sendWebSocketMessage } from '../stores/mindmapWebSocket';
   import { supabase } from '../supabase';
 
-  export let nodes: Node[] = [];
-  export let links: Link[] = [];
+  export let nodes: Node[];
+  export let links: Link[];
   export let mindmapId: string;
+  export let onNodePositionUpdate: (node: Node) => Promise<void>;
 
   let svg: SVGElement;
-  let width = 800;
-  let height = 600;
+  let g: any;
+  let root: any;
+  let width = window.innerWidth;
+  let height = window.innerHeight * 0.9;
   let simulation: any;
   let channel: any;
   let userId: string;
   let cursors: Map<string, { x: number; y: number }> = new Map();
   let zoomBehavior: any;
   let currentLevel = 2;
+  let inviteEmail: string;
+  let inviteRole: string;
 
   function updateVisualization() {
     if (!svg || nodes.length === 0) return;
@@ -103,9 +108,9 @@
     })
     .on('mouseout', function(event) {
       const hoverGroup = d3.select(this).select('.hover-icons');
-      const bbox = hoverGroup.node().getBoundingClientRect();
+      const bbox = (hoverGroup.node() as HTMLElement).getBoundingClientRect();
 
-      if (event.relatedTarget && !hoverGroup.node().contains(event.relatedTarget)) {
+      if (event.relatedTarget && !(hoverGroup.node() as HTMLElement).contains(event.relatedTarget as globalThis.Node)) {
         if (event.pageX < bbox.left || event.pageX > bbox.right ||
             event.pageY < bbox.top || event.pageY > bbox.bottom) {
           hoverGroup
@@ -319,42 +324,69 @@
     if (!svg || !root) return;
 
     const tree = d3.tree()
-      .size([height, width - 160]);
+      .nodeSize([60, 140])  // Fixed spacing between nodes
+      .separation(() => 1);  // Fixed separation
 
     tree(root);
 
     g.selectAll(".node").remove();
     g.selectAll(".link").remove();
 
-    // Update links with proper level filtering
+    // Update links with straight lines
     const links = g.selectAll(".link")
       .data(root.links().filter(d => d.target.depth < currentLevel))
-      .join("path")
+      .join("line")
       .attr("class", "link")
-      .attr("d", d3.linkHorizontal<any, any>()
-        .x((d: any) => d.y)
-        .y((d: any) => d.x))
-      .attr("fill", "none")
-      .attr("stroke", "#ccc")
-      .attr("stroke-width", 2);
+      .attr("x1", d => d.source.y)
+      .attr("y1", d => d.source.x)
+      .attr("x2", d => d.target.y)
+      .attr("y2", d => d.target.x);
 
-    // Update nodes with proper level filtering
+    // Update nodes with rectangles
     const nodes = g.selectAll(".node")
       .data(root.descendants().filter(d => d.depth < currentLevel))
       .join("g")
       .attr("class", "node")
       .attr("transform", d => `translate(${d.y},${d.x})`);
 
-    // ... rest of node rendering ...
+    // Add rectangles for nodes
+    nodes.append("rect")
+      .attr("x", -50)
+      .attr("y", -15)
+      .attr("width", 100)
+      .attr("height", 30)
+      .attr("rx", 2)
+      .attr("ry", 2);
+
+    // Add text
+    nodes.append("text")
+      .attr("dy", "0.3em")
+      .attr("text-anchor", "middle")
+      .text(d => d.data.name)
+      .attr("class", "node-text");
   }
 
   // Update level change handler
   function handleLevelChange() {
     update();  // Call update directly when level changes
   }
+
+  function handleInvite() {
+    // Handle invite functionality
+  }
 </script>
 
-<div class="w-full h-[600px] bg-white rounded-lg shadow-lg overflow-hidden">
+<div class="container">
+
+  <!-- Toolbar with controls -->
+  <div class="toolbar">
+    <div id="buttonGroup">
+      <button id="importButton">Import JSON</button>
+      <button id="exportButton">Export JSON</button>
+      <input type="file" id="fileInput" style="display: none;" />
+    </div>
+    <!-- ... rest of toolbar content ... -->
+  </div>
   <svg
     bind:this={svg}
     {width}
@@ -384,5 +416,61 @@
   }
   .hover-icons text:hover {
     fill: #3182bd;
+  }
+  .node rect {
+    fill: white;
+    stroke: #3182bd;
+    stroke-width: 1.5px;
+  }
+
+  .node-text {
+    font: 12px sans-serif;
+    pointer-events: none;
+  }
+
+  .link {
+    stroke: #ccc;
+    stroke-width: 1.5px;
+  }
+
+  .invitation-bar {
+    width: 100%;
+    padding: 12px 20px;
+    background-color: white;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .invite-form {
+    max-width: 600px;
+    margin: 0 auto;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .invite-input {
+    flex: 1;
+    padding: 6px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+  }
+
+  .role-select {
+    padding: 6px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+  }
+
+  .invite-button {
+    padding: 6px 16px;
+    background-color: #3182ce;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .invite-button:hover {
+    background-color: #2c5282;
   }
 </style>

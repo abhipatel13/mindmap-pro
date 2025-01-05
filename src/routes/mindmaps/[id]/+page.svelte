@@ -199,6 +199,13 @@
     </form>
   </div>
 
+
+  {#if isOwner}
+    <div class="w-full">
+      <InviteUsers {mindmapId} />
+    </div>
+  {/if}
+
   <div class="w-full">
     <MindMap 
       {nodes} 
@@ -208,9 +215,4 @@
     />
   </div>
 
-  {#if isOwner}
-    <div class="w-96">
-      <InviteUsers {mindmapId} />
-    </div>
-  {/if}
 </div>
