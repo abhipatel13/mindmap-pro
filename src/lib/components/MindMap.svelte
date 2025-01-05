@@ -23,6 +23,7 @@
   let currentLevel = 2;
   let inviteEmail: string;
   let inviteRole: string;
+  let currentZoom = 1;
 
   function updateVisualization() {
     if (!svg || nodes.length === 0) return;
@@ -145,10 +146,10 @@
     svgElement.call(zoomBehavior);
   }
 
-  function handleZoom(event) {
-    const { transform } = event;
-    d3.select(svg).select('g').attr('transform', transform);
-    updateZoomLevel(transform.k);
+  function handleZoom(event: any) {
+    const transform = event.transform;
+    d3.select(svg).select('g').attr("transform", transform);
+    currentZoom = transform.k;
   }
 
   function updateZoomLevel(k) {
@@ -374,18 +375,61 @@
   function handleInvite() {
     // Handle invite functionality
   }
+
+  onMount(() => {
+    zoomBehavior = d3.zoom()
+      .scaleExtent([0.1, 3])
+      .on("zoom", handleZoom);
+
+    d3.select(svg).call(zoomBehavior);
+  });
+
+  function handleZoomIn() {
+    if (!svg || !zoomBehavior) return;
+    d3.select(svg)
+      .transition()
+      .duration(300)
+      .call(zoomBehavior.scaleBy, 1.2);
+  }
+
+  function handleZoomOut() {
+    if (!svg || !zoomBehavior) return;
+    d3.select(svg)
+      .transition()
+      .duration(300)
+      .call(zoomBehavior.scaleBy, 0.8);
+  }
+
+  function resetZoom() {
+    if (!svg || !zoomBehavior) return;
+    d3.select(svg)
+      .transition()
+      .duration(300)
+      .call(
+        zoomBehavior.transform,
+        d3.zoomIdentity.translate(width / 4, height / 4).scale(1)
+      );
+  }
 </script>
 
 <div class="container">
-
-  <!-- Toolbar with controls -->
-  <div class="toolbar">
-    <div id="buttonGroup">
-      <button id="importButton">Import JSON</button>
-      <button id="exportButton">Export JSON</button>
-      <input type="file" id="fileInput" style="display: none;" />
-    </div>
-    <!-- ... rest of toolbar content ... -->
+  <div class="zoom-controls">
+    <button class="zoom-btn" on:click={handleZoomIn}>
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24">
+        <path stroke="currentColor" stroke-width="2" d="M12 6v12M6 12h12"/>
+      </svg>
+    </button>
+    <span class="zoom-level">{(currentZoom * 100).toFixed(0)}%</span>
+    <button class="zoom-btn" on:click={handleZoomOut}>
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24">
+        <path stroke="currentColor" stroke-width="2" d="M6 12h12"/>
+      </svg>
+    </button>
+    <button class="zoom-btn" on:click={resetZoom}>
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24">
+        <path stroke="currentColor" stroke-width="2" d="M15 15l-2-2m0 0l-2-2m2 2l2-2m-2 2l-2 2"/>
+      </svg>
+    </button>
   </div>
   <svg
     bind:this={svg}
@@ -472,5 +516,52 @@
 
   .invite-button:hover {
     background-color: #2c5282;
+  }
+
+  .container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  .zoom-controls {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: white;
+    padding: 8px;
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+  }
+
+  .zoom-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    background-color: white;
+    color: var(--theme-color);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .zoom-btn:hover {
+    background-color: var(--theme-color);
+    color: white;
+  }
+
+  .zoom-level {
+    min-width: 60px;
+    text-align: center;
+    font-size: 14px;
+    color: #374151;
+    font-weight: 500;
   }
 </style>
