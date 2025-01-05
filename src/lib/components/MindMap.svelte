@@ -16,6 +16,10 @@
   let channel: any;
   let userId: string;
   let cursors: Map<string, { x: number; y: number }> = new Map();
+  let zoomBehavior: any;
+  let currentLevel = 2;
+  let previousScale = 1;
+  let zoomLevelDisplay: HTMLElement;
 
   function updateVisualization() {
     if (!svg || nodes.length === 0) return;
@@ -61,6 +65,60 @@
       .attr('dy', '.3em')
       .attr('fill', '#333');
 
+    // Add hover menu
+    const hoverGroup = nodeElements.append('g')
+      .attr('class', 'hover-icons')
+      .style('opacity', 0)
+      .style('pointer-events', 'none');
+
+    hoverGroup.selectAll('text')
+      .data(d => [{
+        text: '+',
+        x: 15,
+        action: () => addChild(d)
+      }, {
+        text: '✖',
+        x: 35,
+        action: () => deleteNode(d)
+      }, {
+        text: '✎',
+        x: 55,
+        action: () => editNode(d)
+      }])
+      .join('text')
+      .attr('x', d => d.x)
+      .attr('dy', 30)
+      .text(d => d.text)
+      .on('click', (event, d) => {
+        event.stopPropagation();
+        d.action();
+      });
+
+    // Add hover effects
+    nodeElements.on('mouseover', function() {
+      d3.select(this)
+        .select('.hover-icons')
+        .style('pointer-events', 'all')
+        .transition()
+        .duration(300)
+        .style('opacity', 1);
+    })
+    .on('mouseout', function(event) {
+      const hoverGroup = d3.select(this).select('.hover-icons');
+      const bbox = hoverGroup.node().getBoundingClientRect();
+
+      if (event.relatedTarget && !hoverGroup.node().contains(event.relatedTarget)) {
+        if (event.pageX < bbox.left || event.pageX > bbox.right ||
+            event.pageY < bbox.top || event.pageY > bbox.bottom) {
+          hoverGroup
+            .transition()
+            .duration(300)
+            .style('opacity', 0)
+            .on('end', () => hoverGroup.style('pointer-events', 'none'));
+        }
+      }
+    });
+
     simulation = d3.forceSimulation(nodes)
       .force('link', d3.forceLink(processedLinks).id((d: any) => d.id).distance(150))
       .force('charge', d3.forceManyBody().strength(-800))
@@ -75,6 +133,24 @@
           .attr('x2', d => d.target.x)
           .attr('y2', d => d.target.y);
       });
+
+    // Set up zoom behavior
+    zoomBehavior = d3.zoom()
+      .scaleExtent([0.1, 3])
+      .on('zoom', handleZoom);
+
+    svgElement.call(zoomBehavior);
+  }
+
+  function handleZoom(event) {
+    const { transform } = event;
+    d3.select(svg).select('g').attr('transform', transform);
+    updateZoomLevel(transform.k);
+  }
+
+  function updateZoomLevel(k) {
+    // Update zoom level display (you can add this to your UI)
+    console.log(`Zoom: ${(k * 100).toFixed(0)}%`);
   }
 
   function dragStarted(event: any) {
@@ -115,6 +191,78 @@
     }
   }
 
+  async function addChild(parent: Node) {
+    const newNodeContent = prompt('Enter the content for the new node:');
+    if (newNodeContent) {
+      try {
+        const { data: newNode, error } = await supabase
+          .from('mindmap_nodes')
+          .insert({
+            content: newNodeContent,
+            mindmap_id: mindmapId,
+            parent_id: parent.id
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        nodes = [...nodes, newNode];
+        links = [...links, { source: parent.id, target: newNode.id }];
+
+        sendWebSocketMessage(channel, 'node_add', newNode, userId, mindmapId);
+        updateVisualization();
+      } catch (err) {
+        console.error('Error adding new node:', err);
+      }
+    }
+  }
+
+  async function deleteNode(node: Node) {
+    if (confirm('Are you sure you want to delete this node?')) {
+      try {
+        const { error } = await supabase
+          .from('mindmap_nodes')
+          .delete()
+          .eq('id', node.id)
+          .eq('mindmap_id', mindmapId);
+
+        if (error) throw error;
+
+        nodes = nodes.filter(n => n.id !== node.id);
+        links = links.filter(l => l.source !== node.id && l.target !== node.id);
+
+        sendWebSocketMessage(channel, 'node_delete', { id: node.id }, userId, mindmapId);
+        updateVisualization();
+      } catch (err) {
+        console.error('Error deleting node:', err);
+      }
+    }
+  }
+
+  async function editNode(node: Node) {
+    const newContent = prompt('Edit node content:', node.content);
+    if (newContent !== null && newContent !== node.content) {
+      try {
+        const { error } = await supabase
+          .from('mindmap_nodes')
+          .update({ content: newContent })
+          .eq('id', node.id)
+          .eq('mindmap_id', mindmapId);
+
+        if (error) throw error;
+
+        node.content = newContent;
+        nodes = [...nodes];
+
+        sendWebSocketMessage(channel, 'node_update', { id: node.id, content: newContent }, userId, mindmapId);
+        updateVisualization();
+      } catch (err) {
+        console.error('Error updating node content:', err);
+      }
+    }
+  }
+
   onMount(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     userId = user?.id || 'anonymous';
@@ -134,6 +282,7 @@
         if (nodeIndex !== -1) {
           nodes[nodeIndex].x = payload.x;
           nodes[nodeIndex].y = payload.y;
+          nodes[nodeIndex].content = payload.content;
           nodes = [...nodes];
           updateVisualization();
         }
@@ -185,5 +334,19 @@
   }
   svg:active {
     cursor: grabbing;
+  }
+  .hover-icons {
+    pointer-events: all;
+    transition: opacity 0.4s;
+    padding: 10px;
+  }
+  .hover-icons text {
+    cursor: pointer;
+    font-size: 16px;
+    pointer-events: all;
+    fill: #666;
+  }
+  .hover-icons text:hover {
+    fill: #3182bd;
   }
 </style>
