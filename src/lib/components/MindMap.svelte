@@ -18,8 +18,6 @@
   let cursors: Map<string, { x: number; y: number }> = new Map();
   let zoomBehavior: any;
   let currentLevel = 2;
-  let previousScale = 1;
-  let zoomLevelDisplay: HTMLElement;
 
   function updateVisualization() {
     if (!svg || nodes.length === 0) return;
@@ -315,6 +313,44 @@
     if (svg && nodes.length > 0) {
       updateVisualization();
     }
+  }
+
+  function update() {
+    if (!svg || !root) return;
+
+    const tree = d3.tree()
+      .size([height, width - 160]);
+
+    tree(root);
+
+    g.selectAll(".node").remove();
+    g.selectAll(".link").remove();
+
+    // Update links with proper level filtering
+    const links = g.selectAll(".link")
+      .data(root.links().filter(d => d.target.depth < currentLevel))
+      .join("path")
+      .attr("class", "link")
+      .attr("d", d3.linkHorizontal<any, any>()
+        .x((d: any) => d.y)
+        .y((d: any) => d.x))
+      .attr("fill", "none")
+      .attr("stroke", "#ccc")
+      .attr("stroke-width", 2);
+
+    // Update nodes with proper level filtering
+    const nodes = g.selectAll(".node")
+      .data(root.descendants().filter(d => d.depth < currentLevel))
+      .join("g")
+      .attr("class", "node")
+      .attr("transform", d => `translate(${d.y},${d.x})`);
+
+    // ... rest of node rendering ...
+  }
+
+  // Update level change handler
+  function handleLevelChange() {
+    update();  // Call update directly when level changes
   }
 </script>
 
