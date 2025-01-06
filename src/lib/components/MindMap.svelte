@@ -28,13 +28,26 @@
   function updateVisualization() {
     if (!svg || nodes.length === 0) return;
 
+    // Filter nodes based on current level
+    const visibleNodes = nodes.filter(node => {
+      const depth = getNodeDepth(node);
+      return depth < currentLevel;
+    });
+
+    // Filter links based on visible nodes
+    const visibleLinks = links.filter(link => {
+      const sourceDepth = getNodeDepth(nodes.find(n => n.id === link.source));
+      const targetDepth = getNodeDepth(nodes.find(n => n.id === link.target));
+      return sourceDepth < currentLevel - 1 && targetDepth < currentLevel;
+    });
+
     const svgElement = d3.select(svg);
     svgElement.selectAll('*').remove();
 
     const g = svgElement.append('g');
 
     // Process links
-    const processedLinks = links.map(link => ({
+    const processedLinks = visibleLinks.map(link => ({
       source: nodes.find(n => n.id === (typeof link.source === 'string' ? link.source : link.source.id)),
       target: nodes.find(n => n.id === (typeof link.target === 'string' ? link.target : link.target.id))
     })).filter(link => link.source && link.target);
@@ -50,7 +63,7 @@
     // Draw nodes
     const nodeElements = g.append('g')
       .selectAll('g')
-      .data(nodes)
+      .data(visibleNodes)
       .join('g')
       .call(d3.drag<SVGGElement, Node>()
         .on('start', dragStarted)
@@ -123,7 +136,7 @@
       }
     });
 
-    simulation = d3.forceSimulation(nodes)
+    simulation = d3.forceSimulation(visibleNodes)
       .force('link', d3.forceLink(processedLinks).id((d: any) => d.id).distance(150))
       .force('charge', d3.forceManyBody().strength(-800))
       .force('center', d3.forceCenter(width / 2, height / 2))
@@ -368,8 +381,10 @@
   }
 
   // Update level change handler
-  function handleLevelChange() {
-    update();  // Call update directly when level changes
+  function handleLevelChange(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    currentLevel = parseInt(select.value);
+    updateVisualization();
   }
 
   function handleInvite() {
@@ -410,26 +425,42 @@
         d3.zoomIdentity.translate(width / 4, height / 4).scale(1)
       );
   }
+
+  function getNodeDepth(node: Node): number {
+    let depth = 0;
+    let current = node;
+    
+    while (current.parent_id) {
+      depth++;
+      current = nodes.find(n => n.id === current.parent_id) || current;
+      if (!current) break;
+    }
+    
+    return depth;
+  }
 </script>
 
 <div class="container">
-  <div class="zoom-controls">
-    <button class="zoom-btn" on:click={handleZoomIn}>
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24">
-        <path stroke="currentColor" stroke-width="2" d="M12 6v12M6 12h12"/>
-      </svg>
-    </button>
-    <span class="zoom-level">{(currentZoom * 100).toFixed(0)}%</span>
-    <button class="zoom-btn" on:click={handleZoomOut}>
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24">
-        <path stroke="currentColor" stroke-width="2" d="M6 12h12"/>
-      </svg>
-    </button>
-    <button class="zoom-btn" on:click={resetZoom}>
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24">
-        <path stroke="currentColor" stroke-width="2" d="M15 15l-2-2m0 0l-2-2m2 2l2-2m-2 2l-2 2"/>
-      </svg>
-    </button>
+  <div class="controls">
+    <div class="zoom-controls">
+      <button class="control-btn" on:click={handleZoomIn}>+</button>
+      <span class="zoom-level">{(currentZoom * 100).toFixed(0)}%</span>
+      <button class="control-btn" on:click={handleZoomOut}>-</button>
+      <button class="control-btn" on:click={resetZoom}>Reset</button>
+    </div>
+    <div class="level-controls">
+      <label for="level-select">Level:</label>
+      <select 
+        id="level-select" 
+        bind:value={currentLevel}
+        on:change={handleLevelChange}
+        class="level-select"
+      >
+        {#each Array(5) as _, i}
+          <option value={i + 1}>{i + 1}</option>
+        {/each}
+      </select>
+    </div>
   </div>
   <svg
     bind:this={svg}
@@ -563,5 +594,47 @@
     font-size: 14px;
     color: #374151;
     font-weight: 500;
+  }
+
+  .controls {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background-color: white;
+    padding: 8px;
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+  }
+
+  .zoom-controls, .level-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .control-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    background-color: white;
+    color: var(--theme-color);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .level-select {
+    padding: 4px 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    background-color: white;
+    color: #374151;
   }
 </style>
