@@ -13,11 +13,9 @@ export function createMindmapChannel(mindmapId: string, callbacks: {
 
   channel
     .on('broadcast', { event: 'node_move' }, ({ payload }) => {
-      console.log('Node move received:', payload);
       callbacks.onNodeMove(payload);
     })
     .on('broadcast', { event: 'node_update' }, ({ payload }) => {
-      console.log('Node update received:', payload);
       callbacks.onNodeUpdate(payload);
     })
     .on('broadcast', { event: 'cursor_move' }, ({ payload }) => {
@@ -29,7 +27,6 @@ export function createMindmapChannel(mindmapId: string, callbacks: {
       table: 'mindmap_nodes',
       filter: `mindmap_id=eq.${mindmapId}`
     }, (payload) => {
-      console.log('Database change:', payload);
       switch (payload.eventType) {
         case 'INSERT':
           const newNode = {

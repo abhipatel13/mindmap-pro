@@ -28,13 +28,11 @@
   function updateVisualization() {
     if (!svg || nodes.length === 0) return;
 
-    // Filter nodes based on current level
     const visibleNodes = nodes.filter(node => {
       const depth = getNodeDepth(node);
       return depth < currentLevel;
     });
 
-    // Filter links based on visible nodes
     const visibleLinks = links.filter(link => {
       const sourceDepth = getNodeDepth(nodes.find(n => n.id === link.source));
       const targetDepth = getNodeDepth(nodes.find(n => n.id === link.target));
@@ -46,13 +44,11 @@
 
     const g = svgElement.append('g');
 
-    // Process links
     const processedLinks = visibleLinks.map(link => ({
       source: nodes.find(n => n.id === (typeof link.source === 'string' ? link.source : link.source.id)),
       target: nodes.find(n => n.id === (typeof link.target === 'string' ? link.target : link.target.id))
     })).filter(link => link.source && link.target);
 
-    // Draw links
     const linkElements = g.append('g')
       .selectAll('line')
       .data(processedLinks)
@@ -151,7 +147,6 @@
           .attr('y2', d => d.target.y);
       });
 
-    // Set up zoom behavior
     zoomBehavior = d3.zoom()
       .scaleExtent([0.1, 3])
       .on('zoom', handleZoom);
@@ -163,11 +158,6 @@
     const transform = event.transform;
     d3.select(svg).select('g').attr("transform", transform);
     currentZoom = transform.k;
-  }
-
-  function updateZoomLevel(k) {
-    // Update zoom level display (you can add this to your UI)
-    console.log(`Zoom: ${(k * 100).toFixed(0)}%`);
   }
 
   function dragStarted(event: any) {

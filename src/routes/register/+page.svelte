@@ -43,8 +43,6 @@
           .eq('id', user.id);
 
         if (profileError) throw profileError;
-
-        console.log('User registered:', user);
         
         window.location.href = '/mindmaps';
       }

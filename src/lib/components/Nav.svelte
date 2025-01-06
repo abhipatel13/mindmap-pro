@@ -31,7 +31,7 @@
     <div class="flex justify-between h-16">
       <div class="flex">
         <a href="/" class="flex items-center">
-          <span class="text-2xl font-bold text-indigo-600">MindFlow</span>
+          <span class="text-2xl font-bold ">MindFlow</span>
         </a>
       </div>
 

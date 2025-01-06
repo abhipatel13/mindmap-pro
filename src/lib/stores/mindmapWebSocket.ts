@@ -55,7 +55,6 @@ export async function createMindmapWebSocket(mindmapId: string, callbacks: {
       table: 'mindmap_nodes',
       filter: `mindmap_id=eq.${mindmapId}`
     }, (payload) => {
-      console.log('Database change:', payload);
       if (payload.eventType === 'INSERT') {
         callbacks.onNodeAdd(payload.new as Node);
       } else if (payload.eventType === 'UPDATE') {

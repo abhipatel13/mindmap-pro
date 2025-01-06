@@ -8,8 +8,11 @@
   let error = '';
   let newMindmapTitle = '';
   let creating = false;
+  let user: any;
 
-  onMount(() => {
+  onMount(async () => {
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    user = currentUser;
     loadMindmaps();
   });
 
@@ -17,8 +20,6 @@
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
-
-      console.log('User:', user.id);
 
       // Load owned mindmaps
       const { data: ownedMaps, error: ownedErr } = await supabase
@@ -104,21 +105,38 @@
     }
   }
 
-  async function deleteMindmap(id: string) {
-    if (!confirm('Are you sure you want to delete this mindmap?')) return;
-
+  async function deleteMindmap(id: string, isOwner: boolean) {
     try {
       error = '';
-      const { error: err } = await supabase
-        .from('mindmaps')
-        .delete()
-        .match({ id });
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (isOwner) {
+        if (!confirm('Are you sure you want to delete this mindmap?')) return;
+        
+        const { error: err } = await supabase
+          .from('mindmaps')
+          .delete()
+          .match({ id });
 
-      if (err) throw err;
+        if (err) throw err;
+      } else {
+        if (!confirm('Are you sure you want to remove this mindmap from your workspace?')) return;
+        
+        const { error: err } = await supabase
+          .from('mindmap_collaborators')
+          .delete()
+          .match({ 
+            mindmap_id: id, 
+            user_id: user?.id 
+          });
+
+        if (err) throw err;
+      }
+
       mindmaps = mindmaps.filter(m => m.id !== id);
     } catch (err: any) {
       error = err.message;
-      console.error('Error deleting mindmap:', err);
+      console.error('Error:', err);
     }
   }
 </script>
@@ -182,9 +200,9 @@
                   </p>
                 </div>
                 <button
-                  on:click={() => deleteMindmap(mindmap.id)}
+                  on:click={() => deleteMindmap(mindmap.id, mindmap.owner_id === user?.id)}
                   class="text-gray-400 hover:text-red-600"
-                  title="Delete mindmap"
+                  title={mindmap.owner_id === user?.id ? "Delete mindmap" : "Remove from workspace"}
                 >
                   <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

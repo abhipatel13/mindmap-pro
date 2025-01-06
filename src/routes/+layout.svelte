@@ -19,7 +19,7 @@
       <div class="flex justify-between h-16">
         <div class="flex">
           <a href="/" class="flex items-center">
-            <span class="text-xl font-bold text-gray-800">MindMap</span>
+            <span class="text-xl font-bold text-indigo-600">MindMap</span>
           </a>
         </div>
 

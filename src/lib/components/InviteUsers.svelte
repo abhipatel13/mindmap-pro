@@ -23,7 +23,6 @@
 
     if (data) {
       collaborators = data;
-      console.log('Collaborators:', collaborators);
     }
   }
 

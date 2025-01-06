@@ -5,6 +5,7 @@
   import MindMap from '$lib/components/MindMap.svelte';
   import type { Node, Link, MindMap as MindMapType } from '$lib/types';
   import InviteUsers from '$lib/components/InviteUsers.svelte';
+  import { goto } from '$app/navigation';
 
   const mindmapId = $page.params.id;
   let mindmap: MindMapType | null = null;
@@ -17,7 +18,6 @@
 
   async function loadMindmap() {
     try {
-      console.log('Loading mindmap:', mindmapId);
       
       // Load mindmap details
       const { data: mindmapData, error: mindmapError } = await supabase
@@ -31,7 +31,6 @@
         throw mindmapError;
       }
       mindmap = mindmapData;
-      console.log('Loaded mindmap:', mindmap);
 
       // Load nodes
       const { data: nodesData, error: nodesError } = await supabase
@@ -44,7 +43,6 @@
         throw nodesError;
       }
       nodes = nodesData || [];
-      console.log('Loaded nodes:', nodes);
 
       // Create links from parent-child relationships
       links = nodes
@@ -53,7 +51,6 @@
           source: node.parent_id!,
           target: node.id
         }));
-      console.log('Created links:', links);
 
     } catch (err: any) {
       error = err.message;
@@ -118,6 +115,43 @@
 
     const session = await supabase.auth.getSession();
     isOwner = mindmap?.owner_id === session.data.session?.user.id;
+  }
+
+  async function handleDelete() {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!isOwner) {
+      if (confirm('Are you sure you want to remove yourself from this mindmap?')) {
+        try {
+          const response = await fetch(`/api/mindmaps/${mindmapId}/collaborators`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: session?.user.email })
+          });
+          
+          if (response.ok) {
+            goto('/mindmaps');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+        }
+      }
+    } else {
+      // For owners, delete the entire mindmap
+      if (confirm('Are you sure you want to delete this mindmap?')) {
+        try {
+          const response = await fetch(`/api/mindmaps/${mindmapId}`, {
+            method: 'DELETE'
+          });
+
+          if (response.ok) {
+            goto('/mindmaps');
+          }
+        } catch (error) {
+          console.error('Error:', error);
+        }
+      }
+    }
   }
 
   // Subscribe to real-time updates
@@ -214,5 +248,12 @@
       onNodePositionUpdate={updateNodePosition} 
     />
   </div>
+
+  <button 
+    on:click={handleDelete}
+    class="text-red-600 hover:text-red-800"
+  >
+    {isOwner ? 'Delete Mindmap' : 'Remove from Workspace'}
+  </button>
 
 </div>
