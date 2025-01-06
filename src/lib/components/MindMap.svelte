@@ -442,24 +442,26 @@
 
 <div class="container">
   <div class="controls">
-    <div class="zoom-controls">
-      <button class="control-btn" on:click={handleZoomIn}>+</button>
-      <span class="zoom-level">{(currentZoom * 100).toFixed(0)}%</span>
-      <button class="control-btn" on:click={handleZoomOut}>-</button>
-      <button class="control-btn" on:click={resetZoom}>Reset</button>
-    </div>
-    <div class="level-controls">
-      <label for="level-select">Level:</label>
-      <select 
-        id="level-select" 
-        bind:value={currentLevel}
-        on:change={handleLevelChange}
-        class="level-select"
-      >
-        {#each Array(5) as _, i}
-          <option value={i + 1}>{i + 1}</option>
-        {/each}
-      </select>
+    <div class="control-group">
+      <div class="zoom-controls">
+        <button class="control-btn" on:click={handleZoomIn}>+</button>
+        <span class="zoom-level">{(currentZoom * 100).toFixed(0)}%</span>
+        <button class="control-btn" on:click={handleZoomOut}>-</button>
+        <button class="control-btn" on:click={resetZoom}>Reset</button>
+      </div>
+      <div class="level-controls">
+        <label for="level-select">Level:</label>
+        <select 
+          id="level-select" 
+          bind:value={currentLevel}
+          on:change={handleLevelChange}
+          class="level-select"
+        >
+          {#each Array(5) as _, i}
+            <option value={i + 1}>{i + 1}</option>
+          {/each}
+        </select>
+      </div>
     </div>
   </div>
   <svg
@@ -555,59 +557,21 @@
     height: 100%;
   }
 
-  .zoom-controls {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background-color: white;
-    padding: 8px;
-    border-radius: 6px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    z-index: 10;
-  }
-
-  .zoom-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border: 1px solid #e5e7eb;
-    border-radius: 4px;
-    background-color: white;
-    color: var(--theme-color);
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .zoom-btn:hover {
-    background-color: var(--theme-color);
-    color: white;
-  }
-
-  .zoom-level {
-    min-width: 60px;
-    text-align: center;
-    font-size: 14px;
-    color: #374151;
-    font-weight: 500;
-  }
-
   .controls {
     position: absolute;
     top: 20px;
     right: 20px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    background-color: white;
-    padding: 8px;
-    border-radius: 6px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     z-index: 10;
+  }
+
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background-color: white;
+    padding: 12px;
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   }
 
   .zoom-controls, .level-controls {
