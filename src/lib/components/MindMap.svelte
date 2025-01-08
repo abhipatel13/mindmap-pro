@@ -24,6 +24,9 @@
   let inviteEmail: string;
   let inviteRole: string;
   let currentZoom = 1;
+  let status: number = 0;
+  let previousScale = 1;
+  console.log('MindMap.svelte');
 
   function updateVisualization() {
     if (!svg || nodes.length === 0) return;
@@ -158,6 +161,22 @@
     const transform = event.transform;
     d3.select(svg).select('g').attr("transform", transform);
     currentZoom = transform.k;
+    
+    // Update level based on zoom scale
+    if (transform.k <= 0.5) {
+        currentLevel = 1;
+    } else if (transform.k <= 0.75) {
+        currentLevel = 2;
+    } else if (transform.k <= 1.0) {
+        currentLevel = 3;
+    } else if (transform.k <= 1.25) {
+        currentLevel = 4;
+    } else {
+        currentLevel = 5;
+    }
+    
+    console.log('Zoom scale:', transform.k.toFixed(2), 'Level:', currentLevel);
+    // updateVisualization();
   }
 
   function dragStarted(event: any) {
@@ -377,32 +396,45 @@
     updateVisualization();
   }
 
-  function handleInvite() {
-    // Handle invite functionality
-  }
-
   onMount(() => {
-    zoomBehavior = d3.zoom()
-      .scaleExtent([0.1, 3])
-      .on("zoom", handleZoom);
+    const svgElement = d3.select(svg)
+        .attr("viewBox", [0, 0, width, height])
+        .attr("preserveAspectRatio", "xMidYMid meet");
 
-    d3.select(svg).call(zoomBehavior);
+    g = svgElement.append("g")
+        .attr("transform", `translate(0,${height / 2})`);
+
+        svgElement.call(zoom);
   });
 
   function handleZoomIn() {
     if (!svg || !zoomBehavior) return;
+    
+    // Increase level (max 5)
+    currentLevel = Math.min(currentLevel + 1, 5);
+    console.log('Zoom In - New Level:', currentLevel);
+    
     d3.select(svg)
-      .transition()
-      .duration(300)
-      .call(zoomBehavior.scaleBy, 1.2);
+        .transition()
+        .duration(300)
+        .call(zoomBehavior.scaleBy, 1.2);
+    
+    updateVisualization();
   }
 
   function handleZoomOut() {
     if (!svg || !zoomBehavior) return;
+    
+    // Decrease level (min 1)
+    currentLevel = Math.max(currentLevel - 1, 1);
+    console.log('Zoom Out - New Level:', currentLevel);
+    
     d3.select(svg)
-      .transition()
-      .duration(300)
-      .call(zoomBehavior.scaleBy, 0.8);
+        .transition()
+        .duration(300)
+        .call(zoomBehavior.scaleBy, 0.8);
+    
+    updateVisualization();
   }
 
   function resetZoom() {
@@ -427,6 +459,81 @@
     }
     
     return depth;
+  }
+
+  const zoomLevels = {
+    0.5: 1,    // Level 1 only
+    0.75: 2,   // Level 1-2
+    1.0: 3,    // Level 1-3
+    1.25: 4,   // Level 1-4
+    1.5: 5     // Level 1-5
+  };
+
+  function updateNodesForZoom(scale: number) {
+    console.log('updateNodesForZoom');
+    if (!root) return;
+    status = 1;
+
+    // Log zoom information
+    console.log('Current zoom scale:', scale.toFixed(2));
+    console.log('Previous scale:', previousScale.toFixed(2));
+
+    // Get target depth and update level
+    const targetDepth = getTargetDepth(scale);
+    console.log('Target depth:', targetDepth);
+    currentLevel = targetDepth;
+    
+    if (scale < previousScale) {
+        console.log('Zooming OUT - Collapsing to level:', targetDepth);
+        collapseToLevel(root, 0, targetDepth);
+    } else {
+        console.log('Zooming IN - Expanding to level:', targetDepth);
+        expandToLevel(root, 0, targetDepth);
+    }
+    
+    previousScale = scale;
+    updateVisualization();
+  }
+
+  function getTargetDepth(scale: number): number {
+    let depth;
+    if (scale <= 0.5) depth = 1;
+    else if (scale <= 0.75) depth = 2;
+    else if (scale <= 1.0) depth = 3;
+    else if (scale <= 1.25) depth = 4;
+    else depth = 5;
+    
+    console.log('Scale:', scale.toFixed(2), '-> Depth:', depth);
+    return depth;
+  }
+
+  const zoom = d3.zoom()
+    .scaleExtent([0.5, 1.5])
+    .on("zoom", (event) => {
+        g.attr("transform", event.transform);
+        updateNodesForZoom(event.transform.k);
+    });
+
+  function collapseToLevel(node: any, depth: number, maxDepth: number) {
+    if (!node) return;
+    if (depth >= maxDepth && node.children) {
+        node._children = node.children;
+        node.children = null;
+    }
+    if (node.children) {
+        node.children.forEach((child: any) => collapseToLevel(child, depth + 1, maxDepth));
+    }
+  }
+
+  function expandToLevel(node: any, depth: number, maxDepth: number) {
+    if (!node) return;
+    if (depth < maxDepth && node._children) {
+        node.children = node._children;
+        node._children = null;
+    }
+    if (node.children) {
+        node.children.forEach((child: any) => expandToLevel(child, depth + 1, maxDepth));
+    }
   }
 </script>
 
