@@ -216,10 +216,4 @@
     />
   </div>
 
-  <button 
-    on:click={handleDelete}
-    class="text-red-600 hover:text-red-800"
-  >
-    {isOwner ? 'Delete Mindmap' : 'Remove from Workspace'}
-  </button>
 </div>
