@@ -6,6 +6,7 @@
   import type { Node, Link, MindMap as MindMapType } from '$lib/types';
   import InviteUsers from '$lib/components/InviteUsers.svelte';
   import { goto } from '$app/navigation';
+  import type { RealtimeChannel } from '@supabase/supabase-js';
 
   const mindmapId = $page.params.id;
   let mindmap: MindMapType | null = null;
@@ -15,6 +16,7 @@
   let selectedNodeId: string | null = null;
   let error = '';
   let isOwner = false;
+  let nodesSubscription: RealtimeChannel;
 
   async function loadMindmap() {
     try {
@@ -155,43 +157,124 @@
   }
 
   // Subscribe to real-time updates
-  onMount(() => {
-    loadMindmap();
-    checkOwnership();
+  onMount((() => {
+    const loadData = async () => {
+        try {
+            // Load mindmap details first
+            const { data: mindmapData, error: mindmapError } = await supabase
+                .from('mindmaps')
+                .select('*')
+                .eq('id', mindmapId)
+                .single();
 
-    const nodesSubscription = supabase
-      .channel('mindmap-nodes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'mindmap_nodes',
-          filter: `mindmap_id=eq.${mindmapId}`
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const newNode = payload.new as Node;
-            nodes = [...nodes, newNode];
-            if (newNode.parent_id) {
-              links = [...links, { source: newNode.parent_id, target: newNode.id }];
+            if (mindmapError) throw mindmapError;
+            mindmap = mindmapData;
+
+            // Fetch existing nodes
+            const { data: existingNodes, error: nodesError } = await supabase
+                .from('mindmap_nodes')
+                .select('*')
+                .eq('mindmap_id', mindmapId);
+
+            if (nodesError) throw nodesError;
+
+            // Initialize with sample data if no nodes exist
+            if (!existingNodes || existingNodes.length === 0) {
+                const sampleNodes = [
+                    { 
+                        content: 'Root',
+                        mindmap_id: mindmapId,
+                        parent_id: null,
+                        position_x: 400,
+                        position_y: 300
+                    },
+                    {
+                        content: 'Child 1',
+                        mindmap_id: mindmapId,
+                        parent_id: null, // Will update after root is created
+                        position_x: 200,
+                        position_y: 200
+                    },
+                    {
+                        content: 'Child 2',
+                        mindmap_id: mindmapId,
+                        parent_id: null, // Will update after root is created
+                        position_x: 600,
+                        position_y: 400
+                    }
+                ];
+
+                // Insert root node first
+                const { data: rootNode, error: rootError } = await supabase
+                    .from('mindmap_nodes')
+                    .insert([sampleNodes[0]])
+                    .select()
+                    .single();
+
+                if (rootError) throw rootError;
+
+                // Update children with root's ID and insert
+                sampleNodes[1].parent_id = rootNode.id;
+                sampleNodes[2].parent_id = rootNode.id;
+
+                const { data: childNodes, error: childrenError } = await supabase
+                    .from('mindmap_nodes')
+                    .insert([sampleNodes[1], sampleNodes[2]])
+                    .select();
+
+                if (childrenError) throw childrenError;
+
+                nodes = [rootNode, ...childNodes];
+                links = childNodes.map(node => ({
+                    source: node.parent_id,
+                    target: node.id
+                }));
+            } else {
+                nodes = existingNodes;
+                links = existingNodes
+                    .filter(node => node.parent_id)
+                    .map(node => ({
+                        source: node.parent_id!,
+                        target: node.id
+                    }));
             }
-          } else if (payload.eventType === 'DELETE') {
-            const oldNode = payload.old as Node;
-            nodes = nodes.filter(n => n.id !== oldNode.id);
-            links = links.filter(l => l.source !== oldNode.id && l.target !== oldNode.id);
-          } else if (payload.eventType === 'UPDATE') {
-            const updatedNode = payload.new as Node;
-            nodes = nodes.map(n => n.id === updatedNode.id ? updatedNode : n);
-          }
-        }
-      )
-      .subscribe();
 
-    return () => {
-      nodesSubscription.unsubscribe();
+            // Setup real-time subscription
+            nodesSubscription = supabase
+                .channel('mindmap-nodes')
+                .on('postgres_changes', 
+                    { event: '*', schema: 'public', table: 'mindmap_nodes', filter: `mindmap_id=eq.${mindmapId}` },
+                    (payload) => {
+                        if (payload.eventType === 'INSERT') {
+                            const newNode = payload.new as Node;
+                            nodes = [...nodes, newNode];
+                            if (newNode.parent_id) {
+                                links = [...links, { source: newNode.parent_id, target: newNode.id }];
+                            }
+                        } else if (payload.eventType === 'DELETE') {
+                            const oldNode = payload.old as Node;
+                            nodes = nodes.filter(n => n.id !== oldNode.id);
+                            links = links.filter(l => l.source !== oldNode.id && l.target !== oldNode.id);
+                        } else if (payload.eventType === 'UPDATE') {
+                            const updatedNode = payload.new as Node;
+                            nodes = nodes.map(n => n.id === updatedNode.id ? updatedNode : n);
+                        }
+                    }
+                )
+                .subscribe();
+
+        } catch (err) {
+            console.error('Error:', err);
+            error = 'Failed to load mindmap';
+        }
     };
-  });
+    
+    loadData();
+    
+    return () => {
+        if (nodesSubscription) nodesSubscription.unsubscribe();
+    };
+  }) as () => (() => void));
 </script>
 
 <div class="space-y-6 p-6">
