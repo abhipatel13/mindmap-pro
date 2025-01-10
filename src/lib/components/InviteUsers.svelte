@@ -93,212 +93,86 @@
   }
 </script>
 
-<div class="add-node-container">
-  <div class="add-node-form">
-    <div class="form-row">
-      <div class="input-group">
-        <label for="invite-email">Email:</label>
-        <input
-          id="invite-email"
-          type="email"
-          bind:value={email}
-          placeholder="Enter email to invite"
-          class="input-field"
-        />
-      </div>
-      
-      <div class="input-group">
-        <label for="invite-role">Role:</label>
-        <select
-          id="invite-role"
-          bind:value={role}
-          class="select-field"
-        >
-          <option value="viewer">Viewer</option>
-          <option value="editor">Editor</option>
-        </select>
-      </div>
+<div class="p-6">
+  <h2 class="text-lg font-semibold text-gray-900 mb-4">Invite Collaborators</h2>
+  
+  <div class="space-y-6">
+    <!-- Invite Form -->
+    <div class="bg-white rounded-lg">
+      <div class="space-y-4">
+        <div>
+          <label for="invite-email" class="block text-sm font-medium text-gray-700">
+            Email address
+          </label>
+          <input
+            id="invite-email"
+            type="email"
+            bind:value={email}
+            placeholder="Enter collaborator's email"
+            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+          />
+        </div>
 
-      <button
-        type="button"
-        on:click={inviteUser}
-        class="add-btn"
-      >
-        Invite User
-      </button>
+        <div>
+          <label for="invite-role" class="block text-sm font-medium text-gray-700">
+            Access Level
+          </label>
+          <select
+            id="invite-role"
+            bind:value={role}
+            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+          >
+            <option value="viewer">Viewer (can only view)</option>
+            <option value="editor">Editor (can edit)</option>
+          </select>
+        </div>
+
+        {#if error || success}
+          <div class="mt-2">
+            {#if error}
+              <p class="text-sm text-red-600">{error}</p>
+            {/if}
+            {#if success}
+              <p class="text-sm text-green-600">{success}</p>
+            {/if}
+          </div>
+        {/if}
+
+        <button
+          type="button"
+          on:click={inviteUser}
+          class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+        >
+          Send Invitation
+        </button>
+      </div>
     </div>
 
-    {#if error || success}
-      <div class="message-container">
-        {#if error}
-          <p class="error-message">{error}</p>
-        {/if}
-        {#if success}
-          <p class="success-message">{success}</p>
-        {/if}
+    <!-- Collaborators List -->
+    {#if collaborators.length > 0}
+      <div class="mt-8">
+        <h3 class="text-lg font-medium text-gray-900 mb-4">Current Collaborators</h3>
+        <div class="space-y-3">
+          {#each collaborators as collab}
+            <div class="flex items-center justify-between bg-gray-50 px-4 py-3 rounded-lg">
+              <div class="flex flex-col">
+                <span class="text-sm font-medium text-gray-900">{collab.user.email}</span>
+                <span class="text-xs text-gray-500 capitalize">{collab.role}</span>
+              </div>
+              <button
+                on:click={() => removeCollaborator(collab.user_id)}
+                class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                Remove
+              </button>
+            </div>
+          {/each}
+        </div>
       </div>
     {/if}
   </div>
-
-  {#if collaborators.length > 0}
-    <div class="collaborators-list">
-      <h3 class="list-title">Current Collaborators</h3>
-      <div class="collaborators">
-        {#each collaborators as collab}
-          <div class="collaborator-item">
-            <div class="collaborator-info">
-              <span class="email">{collab.user.email}</span>
-              <span class="role">{collab.role}</span>
-            </div>
-            <button
-              on:click={() => removeCollaborator(collab.user_id)}
-              class="remove-btn"
-            >
-              Remove
-            </button>
-          </div>
-        {/each}
-      </div>
-    </div>
-  {/if}
 </div>
 
 <style>
-  :root {
-    --theme-color: rgb(67 56 202);
-    --theme-color-dark: rgb(55 48 163);
-    --theme-color-light: rgb(224 231 255);
-  }
-
-  .add-node-container {
-    width: 100%;
-    background-color: white;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-
-  .add-node-form {
-    width: 100%;
-    padding: 20px;
-    border-bottom: 1px solid #e5e7eb;
-  }
-
-  .form-row {
-    width: 100%;
-    display: flex;
-    gap: 16px;
-    align-items: flex-end;
-  }
-
-  .input-group {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .input-group label {
-    font-size: 14px;
-    font-weight: 500;
-    color: #374151;
-  }
-
-  .input-field, .select-field {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1px solid #e5e7eb;
-    border-radius: 4px;
-    font-size: 14px;
-    background-color: white;
-  }
-
-  .add-btn {
-    height: 40px;
-    padding: 0 24px;
-    background-color: var(--theme-color);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-size: 14px;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .add-btn:hover {
-    background-color: var(--theme-color-dark);
-  }
-
-  .message-container {
-    margin-top: 12px;
-  }
-
-  .error-message {
-    color: #dc2626;
-    font-size: 14px;
-  }
-
-  .success-message {
-    color: #059669;
-    font-size: 14px;
-  }
-
-  .collaborators-list {
-    padding: 20px;
-  }
-
-  .list-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #1f2937;
-    margin-bottom: 12px;
-  }
-
-  .collaborators {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .collaborator-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 12px;
-    background-color: #f9fafb;
-    border-radius: 4px;
-  }
-
-  .collaborator-info {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-  }
-
-  .email {
-    font-size: 14px;
-    color: #374151;
-  }
-
-  .role {
-    font-size: 12px;
-    color: #6b7280;
-    padding: 2px 8px;
-    background-color: #e5e7eb;
-    border-radius: 12px;
-  }
-
-  .remove-btn {
-    padding: 4px 12px;
-    background-color: var(--theme-color-light);
-    color: var(--theme-color);
-    border: 1px solid var(--theme-color);
-    border-radius: 4px;
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  .remove-btn:hover {
-    background-color: var(--theme-color);
-    color: white;
-  }
+  /* Remove previous styles as we're using Tailwind classes */
 </style> 

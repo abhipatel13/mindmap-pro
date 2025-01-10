@@ -206,39 +206,6 @@
       <p class="text-red-700">{error}</p>
     </div>
   {/if}
-  <div class="bg-white shadow sm:rounded-lg p-4">
-    <form on:submit|preventDefault={addNode} class="flex gap-4">
-      <input
-        type="text"
-        bind:value={newNodeContent}
-        placeholder="Enter node content"
-        class="flex-1 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-      />
-      <select
-        bind:value={selectedNodeId}
-        class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-      >
-        <option value={null}>No parent (root node)</option>
-        {#each nodes as node}
-          <option value={node.id}>{node.content}</option>
-        {/each}
-      </select>
-      <button
-        type="submit"
-        disabled={!newNodeContent.trim()}
-        class="inline-flex justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
-      >
-        Add Node
-      </button>
-    </form>
-  </div>
-
-
-  {#if isOwner}
-    <div class="w-full">
-      <InviteUsers {mindmapId} />
-    </div>
-  {/if}
 
   <div class="w-full">
     <MindMap 
@@ -255,5 +222,4 @@
   >
     {isOwner ? 'Delete Mindmap' : 'Remove from Workspace'}
   </button>
-
 </div>
