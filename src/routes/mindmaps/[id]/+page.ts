@@ -1,12 +1,13 @@
-import { error } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
 import { supabase } from '$lib/supabase';
 
 export async function load({ params }) {
   try {
     // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError) throw error(401, 'Authentication failed');
-    if (!user) throw error(401, 'Not authenticated');
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !session) {
+      throw redirect(303, '/login');
+    }
 
     // Get mindmap with nodes
     const { data: mindmap, error: mindmapError } = await supabase
@@ -19,33 +20,33 @@ export async function load({ params }) {
       .single();
 
     if (mindmapError) {
-      console.error('Mindmap fetch error:', mindmapError);
-      throw error(404, 'Mindmap not found');
+      throw redirect(303, '/');
     }
 
-    if (!mindmap) throw error(404, 'Mindmap not found');
+    if (!mindmap) {
+      throw redirect(303, '/');
+    }
 
-    // Check collaboration access
-    const { data: collaborator, error: collabError } = await supabase
+    // Check ownership or collaboration access
+    const { data: collaborator } = await supabase
       .from('mindmap_collaborators')
       .select('*')
       .eq('mindmap_id', params.id)
-      .eq('user_id', user.id)
+      .eq('user_id', session.user.id)
       .single();
 
-    if (mindmap.owner_id !== user.id && !collaborator) {
-      throw error(403, 'Access denied');
+    if (mindmap.owner_id !== session.user.id && !collaborator) {
+      throw redirect(303, '/');
     }
 
     return {
       mindmap,
       nodes: mindmap.mindmap_nodes || [],
-      isOwner: mindmap.owner_id === user.id,
-      user
+      isOwner: mindmap.owner_id === session.user.id,
+      user: session.user
     };
-
-  } catch (err: any) {
-    console.error('Load error:', err);
-    throw error(500, err.message || 'Failed to load mindmap');
+  } catch (err) {
+    if (err instanceof redirect) throw err;
+    throw redirect(303, '/login');
   }
 }
