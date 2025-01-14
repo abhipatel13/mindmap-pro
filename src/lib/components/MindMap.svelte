@@ -103,17 +103,18 @@
 
     switch (eventType) {
       case 'INSERT':
-        addNodeToTree(newRecord);
+        // Only add if not already in tree
+        if (!findNodeById(root, newRecord.id)) {
+          addNodeToTree(newRecord);
+        }
         break;
       case 'UPDATE':
         updateNodeInTree(newRecord);
         break;
       case 'DELETE':
-        removeNodeFromTree(oldRecord.id);
+        loadNodes();
         break;
     }
-
-    update();
   }
 
   function addNodeToTree(node: any) {
@@ -126,31 +127,35 @@
     } else {
       root.children.push(newNode);
     }
+    update();
   }
 
   function updateNodeInTree(node: any) {
     const existingNode = findNodeById(root, node.id);
     if (existingNode) {
-      existingNode.name = node.name;
+      existingNode.content = node.content;
       existingNode.rich_content = node.rich_content;
+      update();
     }
   }
 
   function removeNodeFromTree(nodeId: number) {
-    function removeNode(parent: any) {
-      if (!parent.children) return;
+    console.log('Removing node:', nodeId);
+    
+    function removeRecursive(parent: any): boolean {
+      if (!parent.children) return false;
       
-      // Remove direct child
-      parent.children = parent.children.filter((child: any) => {
+      const initialLength = parent.children.length;
+      parent.children = parent.children.filter(child => {
         if (child.id === nodeId) return false;
-        // Recursively check child's children
-        removeNode(child);
+        removeRecursive(child);
         return true;
       });
+      
+      return initialLength !== parent.children.length;
     }
     
-    removeNode(root);
-    update();
+    removeRecursive(root);
   }
 
   function findNodeById(node: any, id: number): any {
@@ -184,31 +189,46 @@
         return;
       }
 
+      // Immediately add node to local tree
+      addNodeToTree(newNode);
+      
+      // Force update visualization
+      update();
       hideMenu();
     }
   }
 
   async function deleteNode() {
     if (selectedNode && selectedNode.id !== 0) {
-      // First delete all child nodes recursively
-      const deleteChildren = async (nodeId: number) => {
-        const children = findNodeById(root, nodeId)?.children || [];
-        for (const child of children) {
-          await deleteChildren(child.id);
+      // Get all descendant nodes first
+      const nodesToDelete = [];
+      
+      function collectNodes(node: any) {
+        nodesToDelete.push(node.id);
+        if (node.children) {
+          node.children.forEach((child: any) => collectNodes(child));
         }
-        
-        const { error } = await supabase
-          .from('mindmap_nodes')
-          .delete()
-          .eq('id', nodeId)
-          .eq('mindmap_id', mindmapId);
+      }
+      
+      collectNodes(selectedNode);
 
-        if (error) {
-          console.error('Error deleting node:', error);
-        }
-      };
+      // Delete all nodes in a single operation
+      const { error } = await supabase
+        .from('mindmap_nodes')
+        .delete()
+        .in('id', nodesToDelete)
+        .eq('mindmap_id', mindmapId);
 
-      await deleteChildren(selectedNode.id);
+      if (error) {
+        console.error('Error deleting nodes:', error);
+        return;
+      }
+
+      // Immediately update local tree
+      nodesToDelete.forEach(id => removeNodeFromTree(id));
+      
+      // Force update
+      update();
       hideMenu();
     }
   }
@@ -357,12 +377,16 @@
       .attr("y", -25)
       .append("xhtml:div")
       .style("font", "14px sans-serif")
-      .html((d: any) => d.rich_content || d.content);
+      .html((d: any) => {
+        console.log('Node data:', d); // Debug log
+        return d.rich_content || d.content || d.name || "Unnamed Node";
+      });
 
     addNodeControls(nodeEnter);
 
+    // Update existing node content
     node.select("foreignObject div")
-      .html((d: any) => d.rich_content || d.content);
+      .html((d: any) => d.rich_content || d.content || d.name || "Unnamed Node");
 
     node.exit().remove();
   }
@@ -426,7 +450,7 @@
 
   function editNode() {
     if (selectedNode) {
-      const content = selectedNode.richContent || selectedNode.name;
+      const content = selectedNode.rich_content || selectedNode.content;
       window.d3.select("#editDialog").style("display", "block");
       
       window.jQuery('#summernote').summernote({
