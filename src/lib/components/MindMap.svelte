@@ -16,8 +16,13 @@
 </svelte:head>
 
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
+  import { page } from '$app/stores';
+  import { supabase } from '$lib/supabaseClient';
+
+  // Get mindmap ID from URL
+  $: mindmapId = $page.params.id;
 
   let width = 1000;
   let height = 800;
@@ -26,18 +31,267 @@
   let svg: any;
   let force: any;
   let isLoaded = false;
+  let subscription: any;
 
   let root = {
-    "name": "Root",
-    "children": [
-      { "name": "Child 1", "children": [], "id": 1 },
-      { "name": "Child 2", "children": [], "id": 2 }
-    ],
-    "id": 0
+    content: "Root",
+    children: [],
+    id: 0
   };
 
+  async function loadNodes() {
+    const { data, error } = await supabase
+      .from('mindmap_nodes')
+      .select('*')
+      .eq('mindmap_id', mindmapId)
+      .order('created_at');
+
+    if (error) {
+      console.error('Error loading nodes:', error);
+      return;
+    }
+
+    // Convert flat data to tree structure
+    const nodeMap = new Map();
+    data.forEach((node: any) => {
+      nodeMap.set(node.id, { ...node, children: [] });
+    });
+
+    // Reset root
+    root = {
+      content: "Root",
+      children: [],
+      id: 0
+    };
+
+    data.forEach((node: any) => {
+      if (node.parent_id) {
+        const parent = nodeMap.get(node.parent_id);
+        if (parent) {
+          parent.children.push(nodeMap.get(node.id));
+        }
+      } else {
+        // This is the root node for this mindmap
+        Object.assign(root, nodeMap.get(node.id));
+      }
+    });
+
+    update();
+  }
+
+  async function setupRealtimeSubscription() {
+    subscription = supabase
+      .channel('mindmap_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'mindmap_nodes',
+          filter: `mindmap_id=eq.${mindmapId}`
+        },
+        (payload) => {
+          handleRealtimeUpdate(payload);
+        }
+      )
+      .subscribe();
+  }
+
+  function handleRealtimeUpdate(payload: any) {
+    const { eventType, new: newRecord, old: oldRecord } = payload;
+    console.log('Realtime update:', eventType, payload);
+
+    switch (eventType) {
+      case 'INSERT':
+        addNodeToTree(newRecord);
+        break;
+      case 'UPDATE':
+        updateNodeInTree(newRecord);
+        break;
+      case 'DELETE':
+        removeNodeFromTree(oldRecord.id);
+        break;
+    }
+
+    update();
+  }
+
+  function addNodeToTree(node: any) {
+    const newNode = { ...node, children: [] };
+    if (node.parent_id) {
+      const parent = findNodeById(root, node.parent_id);
+      if (parent) {
+        parent.children.push(newNode);
+      }
+    } else {
+      root.children.push(newNode);
+    }
+  }
+
+  function updateNodeInTree(node: any) {
+    const existingNode = findNodeById(root, node.id);
+    if (existingNode) {
+      existingNode.name = node.name;
+      existingNode.rich_content = node.rich_content;
+    }
+  }
+
+  function removeNodeFromTree(nodeId: number) {
+    function removeNode(parent: any) {
+      if (!parent.children) return;
+      
+      // Remove direct child
+      parent.children = parent.children.filter((child: any) => {
+        if (child.id === nodeId) return false;
+        // Recursively check child's children
+        removeNode(child);
+        return true;
+      });
+    }
+    
+    removeNode(root);
+    update();
+  }
+
+  function findNodeById(node: any, id: number): any {
+    if (node.id === id) return node;
+    if (node.children) {
+      for (const child of node.children) {
+        const found = findNodeById(child, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  async function addChild() {
+    if (selectedNode) {
+      const newNodeId = Date.now(); // Generate unique ID
+      const newNode = {
+        id: newNodeId,
+        content: "New Node",
+        parent_id: selectedNode.id,
+        mindmap_id: mindmapId,
+        rich_content: null
+      };
+
+      const { error } = await supabase
+        .from('mindmap_nodes')
+        .insert(newNode);
+
+      if (error) {
+        console.error('Error adding node:', error);
+        return;
+      }
+
+      hideMenu();
+    }
+  }
+
+  async function deleteNode() {
+    if (selectedNode && selectedNode.id !== 0) {
+      // First delete all child nodes recursively
+      const deleteChildren = async (nodeId: number) => {
+        const children = findNodeById(root, nodeId)?.children || [];
+        for (const child of children) {
+          await deleteChildren(child.id);
+        }
+        
+        const { error } = await supabase
+          .from('mindmap_nodes')
+          .delete()
+          .eq('id', nodeId)
+          .eq('mindmap_id', mindmapId);
+
+        if (error) {
+          console.error('Error deleting node:', error);
+        }
+      };
+
+      await deleteChildren(selectedNode.id);
+      hideMenu();
+    }
+  }
+
+  async function saveEdit() {
+    if (selectedNode && selectedNode.id !== 0) {
+      const content = window.jQuery('#summernote').summernote('code');
+      const plainText = window.jQuery('<div>').html(content).text();
+      
+      const { error } = await supabase
+        .from('mindmap_nodes')
+        .update({
+          content: plainText || "Empty Node",
+          rich_content: content
+        })
+        .eq('id', selectedNode.id)
+        .eq('mindmap_id', mindmapId);
+
+      if (error) {
+        console.error('Error updating node:', error);
+        return;
+      }
+
+      closeEdit();
+    }
+  }
+
+  async function initializeMindmap() {
+    // Check if root node exists for this mindmap
+    const { data: existingNodes } = await supabase
+      .from('mindmap_nodes')
+      .select('*')
+      .eq('mindmap_id', mindmapId);
+
+    if (!existingNodes || existingNodes.length === 0) {
+      // Create root node
+      const { data: rootNode, error: rootError } = await supabase
+        .from('mindmap_nodes')
+        .insert({
+          id: Date.now(),
+          content: 'Root',
+          parent_id: null,
+          mindmap_id: mindmapId,
+          rich_content: null
+        })
+        .select()
+        .single();
+
+      if (rootError) {
+        console.error('Error creating root node:', rootError);
+        return;
+      }
+
+      // Create two child nodes
+      const childNodes = [
+        {
+          content: 'Child 1',
+          parent_id: rootNode.id,
+          mindmap_id: mindmapId,
+          rich_content: null
+        },
+        {
+          content: 'Child 2',
+          parent_id: rootNode.id,
+          mindmap_id: mindmapId,
+          rich_content: null
+        }
+      ];
+
+      const { error: childError } = await supabase
+        .from('mindmap_nodes')
+        .insert(childNodes);
+
+      if (childError) {
+        console.error('Error creating child nodes:', childError);
+        return;
+      }
+    }
+
+    await loadNodes();
+  }
+
   onMount(async () => {
-    // Wait for D3 and other dependencies to load
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     if (browser && window.d3) {
@@ -58,7 +312,15 @@
         .attr("transform", "translate(40,0)");
 
       isLoaded = true;
-      update();
+      
+      await initializeMindmap();
+      await setupRealtimeSubscription();
+    }
+  });
+
+  onDestroy(() => {
+    if (subscription) {
+      subscription.unsubscribe();
     }
   });
 
@@ -95,12 +357,12 @@
       .attr("y", -25)
       .append("xhtml:div")
       .style("font", "14px sans-serif")
-      .html((d: any) => d.richContent || d.name);
+      .html((d: any) => d.rich_content || d.content);
 
     addNodeControls(nodeEnter);
 
     node.select("foreignObject div")
-      .html((d: any) => d.richContent || d.name);
+      .html((d: any) => d.rich_content || d.content);
 
     node.exit().remove();
   }
@@ -162,31 +424,6 @@
       .start();
   }
 
-  function addChild() {
-    if (selectedNode) {
-      if (!selectedNode.children) {
-        selectedNode.children = [];
-      }
-      const newNode = {
-        "name": "New Node",
-        "children": [],
-        "id": Date.now()
-      };
-      selectedNode.children.push(newNode);
-      update();
-      hideMenu();
-    }
-  }
-
-  function deleteNode() {
-    if (selectedNode && selectedNode.parent) {
-      const parent = selectedNode.parent;
-      parent.children = parent.children.filter((child: any) => child !== selectedNode);
-      update();
-      hideMenu();
-    }
-  }
-
   function editNode() {
     if (selectedNode) {
       const content = selectedNode.richContent || selectedNode.name;
@@ -206,16 +443,6 @@
       });
       
       window.jQuery('#summernote').summernote('code', content);
-    }
-  }
-
-  function saveEdit() {
-    if (selectedNode) {
-      const content = window.jQuery('#summernote').summernote('code');
-      selectedNode.richContent = content;
-      selectedNode.name = window.jQuery(content).text() || "Empty Node";
-      update();
-      closeEdit();
     }
   }
 
