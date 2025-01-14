@@ -651,15 +651,15 @@
   {#if isLoaded}
     <div class="menu-container">
         <div id="layoutMenu" style="margin-top: 100px;">
-          <div class="controls-row">
-            <button class:active={currentLayout === 'horizontal'} on:click={() => setLayout('horizontal')}>
-              Horizontal
-            </button>
-            <button class:active={currentLayout === 'vertical'} on:click={() => setLayout('vertical')}>
-              Vertical
-            </button>
-
-            <div class="separator">|</div>
+          <div class="controls-row " style="display: flex; align-items: center; gap: 15px; flex-direction: column;">
+            <div class="dimention-control">
+              <button class:active={currentLayout === 'horizontal'} on:click={() => setLayout('horizontal')}>
+                Horizontal
+              </button>
+              <button class:active={currentLayout === 'vertical'} on:click={() => setLayout('vertical')}>
+                Vertical
+              </button>
+            </div>
 
             <div class="force-control">
               <label>Force Strength:</label>
@@ -672,7 +672,6 @@
               >
             </div>
 
-            <div class="separator">|</div>
 
             <div class="zoom-controls">
               <button on:click={() => svg.transition().call(window.d3.zoom().scaleBy, 1.2)}>+</button>
@@ -684,7 +683,6 @@
               <span class="zoom-level">Zoom: {zoomLevel}%</span>
             </div>
 
-            <div class="separator">|</div>
 
             <div class="level-control">
               <label for="level-select">Level:</label>
