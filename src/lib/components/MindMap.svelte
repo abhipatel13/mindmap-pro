@@ -330,24 +330,28 @@
   }
 
   function zoomIn() {
-    const zoom = window.d3.behavior.zoom();
+    if (!zoomBehavior) return;
+    const scale = zoomBehavior.scale() * 1.2;
+    const translate = zoomBehavior.translate();
     svg.transition()
       .duration(300)
-      .call(zoom.scale(window.d3.behavior.zoom().scale() * 1.2).event);
+      .call(zoomBehavior.scale(scale).translate(translate).event);
   }
 
   function zoomOut() {
-    const zoom = window.d3.behavior.zoom();
+    if (!zoomBehavior) return;
+    const scale = zoomBehavior.scale() * 0.8;
+    const translate = zoomBehavior.translate();
     svg.transition()
       .duration(300)
-      .call(zoom.scale(window.d3.behavior.zoom().scale() * 0.8).event);
+      .call(zoomBehavior.scale(scale).translate(translate).event);
   }
 
   function resetZoom() {
-    const zoom = window.d3.behavior.zoom();
+    if (!zoomBehavior) return;
     svg.transition()
       .duration(300)
-      .call(zoom.scale(1).event);
+      .call(zoomBehavior.scale(1).translate([width/2, height/2]).event);
     zoomLevel = 100;
   }
 
@@ -373,18 +377,15 @@
       width = window.innerWidth;
       height = window.innerHeight;
 
-      // Create SVG
       svg = window.d3.select("#chart")
         .append("svg")
         .attr("width", width)
         .attr("height", height);
 
-      // Create a group for the mindmap content
-      const container = svg.append("g")
-        .attr("transform", "translate(0,0)");
+      const container = svg.append("g");
 
-      // Add zoom behavior
-      const zoom = window.d3.behavior.zoom()
+      // Store zoom behavior
+      zoomBehavior = window.d3.behavior.zoom()
         .scaleExtent([0.1, 3])
         .on("zoom", () => {
           container.attr("transform", 
@@ -394,18 +395,17 @@
           zoomLevel = Math.round(window.d3.event.scale * 100);
         });
 
-      svg.call(zoom);
+      svg.call(zoomBehavior);
 
-      // Initialize force layout with the container
+      // Use container for force layout
+      svg = container;
+
       force = window.d3.layout.force()
         .size([width, height])
         .charge(-1000)
         .linkDistance(100)
         .gravity(0.1)
         .on("tick", tick);
-
-      // Move all existing SVG operations to use container instead of svg
-      svg = container;  // Redirect svg variable to container for existing code
 
       isLoaded = true;
       await initializeMindmap();
@@ -674,12 +674,9 @@
 
 
             <div class="zoom-controls">
-              <button on:click={() => svg.transition().call(window.d3.zoom().scaleBy, 1.2)}>+</button>
-              <button on:click={() => svg.transition().call(window.d3.zoom().scaleBy, 0.8)}>-</button>
-              <button on:click={() => {
-                svg.transition().call(window.d3.zoom().transform, window.d3.zoomIdentity);
-                zoomLevel = 100;
-              }}>Reset</button>
+              <button on:click={zoomIn}>+</button>
+              <button on:click={zoomOut}>-</button>
+              <button on:click={resetZoom}>Reset</button>
               <span class="zoom-level">Zoom: {zoomLevel}%</span>
             </div>
 
