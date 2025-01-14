@@ -32,6 +32,9 @@
   let force: any;
   let isLoaded = false;
   let subscription: any;
+  let zoomLevel = 100;
+  let currentLevel = 1;
+  let zoomBehavior: any;
 
   let root = {
     content: "Root",
@@ -311,6 +314,48 @@
     await loadNodes();
   }
 
+  function initializeZoom() {
+    zoomBehavior = window.d3.zoom()
+      .scaleExtent([0.1, 3])
+      .on("zoom", handleZoom);
+
+    svg.call(zoomBehavior);
+  }
+
+  function handleZoom(event: any) {
+    const transform = event.transform;
+    svg.select("g").attr("transform", transform);
+    zoomLevel = Math.round(transform.k * 100);
+  }
+
+  function zoomIn() {
+    svg.transition().duration(300).call(zoomBehavior.scaleBy, 1.2);
+  }
+
+  function zoomOut() {
+    svg.transition().duration(300).call(zoomBehavior.scaleBy, 0.8);
+  }
+
+  function resetZoom() {
+    svg.transition().duration(300).call(zoomBehavior.transform, window.d3.zoomIdentity);
+    zoomLevel = 100;
+  }
+
+  function setLevel(level: number) {
+    currentLevel = level;
+    const nodes = flatten(root);
+    const visibleNodes = nodes.filter(n => n.depth < level);
+    const visibleLinks = window.d3.layout.tree()
+      .links(nodes)
+      .filter(l => l.source.depth < level - 1);
+
+    force.nodes(visibleNodes)
+      .links(visibleLinks)
+      .start();
+    
+    update();
+  }
+
   onMount(async () => {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -335,6 +380,7 @@
       
       await initializeMindmap();
       await setupRealtimeSubscription();
+      initializeZoom();
     }
   });
 
@@ -347,21 +393,24 @@
   function update() {
     if (!svg) return;
     const nodes = flatten(root);
-    const links = window.d3.layout.tree().links(nodes);
+    const visibleNodes = nodes.filter(n => n.depth < currentLevel);
+    const visibleLinks = window.d3.layout.tree()
+      .links(nodes)
+      .filter(l => l.source.depth < currentLevel - 1);
 
-    force.nodes(nodes)
-      .links(links)
+    force.nodes(visibleNodes)
+      .links(visibleLinks)
       .start();
 
     const link = svg.selectAll(".link")
-      .data(links, (d: any) => d.target.id);
+      .data(visibleLinks, (d: any) => d.target.id);
 
     link.enter().insert("path", ".node")
       .attr("class", "link");
     link.exit().remove();
 
     const node = svg.selectAll(".node")
-      .data(nodes, (d: any) => d.id);
+      .data(visibleNodes, (d: any) => d.id);
 
     const nodeEnter = node.enter().append("g")
       .attr("class", "node")
@@ -569,33 +618,69 @@
   }
 </script>
 
-<div id="chart" style="width: 100%; height: 100vh;"></div>
-{#if isLoaded}
-  <div id="menu">
-    <button on:click={addChild}>Add Child</button>
-    <button on:click={deleteNode}>Delete Node</button>
-    <button on:click={editNode}>Edit Node</button>
-  </div>
-  <div id="layoutMenu">
-    <button on:click={() => setLayout('horizontal')}>Horizontal</button>
-    <button on:click={() => setLayout('vertical')}>Vertical</button>
-    <div>
-      <label>Force Strength:</label>
-      <input 
-        type="range" 
-        min="10" 
-        max="300" 
-        value="100" 
-        on:input={(e) => updateForceStrength(e.currentTarget.value)}
-      >
+<div id="chart" style="width: 100%; height: calc(100vh - 64px);">
+  {#if isLoaded}
+    <div class="menu-container">
+        <div id="layoutMenu" style="margin-top: 100px;">
+          <div class="controls-row">
+            <button class:active={currentLayout === 'horizontal'} on:click={() => setLayout('horizontal')}>
+              Horizontal
+            </button>
+            <button class:active={currentLayout === 'vertical'} on:click={() => setLayout('vertical')}>
+              Vertical
+            </button>
+
+            <div class="separator">|</div>
+
+            <div class="force-control">
+              <label>Force Strength:</label>
+              <input 
+                type="range" 
+                min="10" 
+                max="300" 
+                value="100" 
+                on:input={(e) => updateForceStrength(e.currentTarget.value)}
+              >
+            </div>
+
+            <div class="separator">|</div>
+
+            <div class="zoom-controls">
+              <button on:click={() => svg.transition().call(window.d3.zoom().scaleBy, 1.2)}>+</button>
+              <button on:click={() => svg.transition().call(window.d3.zoom().scaleBy, 0.8)}>-</button>
+              <button on:click={() => {
+                svg.transition().call(window.d3.zoom().transform, window.d3.zoomIdentity);
+                zoomLevel = 100;
+              }}>Reset</button>
+              <span class="zoom-level">Zoom: {zoomLevel}%</span>
+            </div>
+
+            <div class="separator">|</div>
+
+            <div class="level-control">
+              <label for="level-select">Level:</label>
+              <select 
+                id="level-select" 
+                bind:value={currentLevel} 
+                on:change={() => update()}
+              >
+                <option value={1}>Level 1 (Root only)</option>
+                <option value={2}>Level 2 (Root + Children)</option>
+                <option value={3}>Level 3 (Root + Children + Grandchildren)</option>
+                <option value={4}>Level 4</option>
+                <option value={5}>Level 5 (All)</option>
+              </select>
+            </div>
+        </div>
+      </div>
     </div>
-  </div>
-{/if}
+  {/if}
 
 <div id="editDialog" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border: 1px solid #ccc; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000;">
   <div id="summernote"></div>
   <button on:click={saveEdit}>Save</button>
-  <button on:click={closeEdit}>Cancel</button>
+    <button on:click={closeEdit}>Cancel</button>
+  </div>
 </div>
 
 <style>
@@ -708,5 +793,84 @@
     width: 100%;
     height: 100vh;
     overflow: hidden;
+  }
+
+  .menu-container {
+    position: fixed;
+    top: 64px;
+    left: 0;
+    right: 0;
+    z-index: 999;
+    background-color: white;
+    border-bottom: 1px solid #ccc;
+  }
+
+  #layoutMenu {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-top: 100px !important;
+    padding: 0 20px;
+  }
+
+  .top-bar {
+    padding: 10px 20px;
+    min-height: 50px;
+  }
+
+  .controls-row {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+  }
+
+  .separator {
+    color: #ccc;
+    font-size: 18px;
+  }
+
+  .zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .zoom-controls button {
+    padding: 5px 10px;
+    border: 1px solid #ccc;
+    background: white;
+    cursor: pointer;
+    height: 32px;
+  }
+
+  .zoom-level {
+    min-width: 80px;
+  }
+
+  .level-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .level-control select {
+    padding: 5px;
+    height: 32px;
+    min-width: 200px;
+  }
+
+  .force-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .force-control input {
+    width: 120px;
+  }
+
+  button.active {
+    background: #3182bd;
+    color: white;
   }
 </style>
