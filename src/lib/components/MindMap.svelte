@@ -1,701 +1,461 @@
-<script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import * as d3 from 'd3';
-  import type { Node, Link } from '$lib/types';
-  import { createMindmapWebSocket, sendWebSocketMessage } from '../stores/mindmapWebSocket';
-  import { supabase } from '../supabase';
-
-  export let nodes: Node[];
-  export let links: Link[];
-  export let mindmapId: string;
-  export let onNodePositionUpdate: (node: Node) => Promise<void>;
-
-  let svg: SVGElement;
-  let g: any;
-  let root: any;
-  let width = window.innerWidth;
-  let height = window.innerHeight * 0.9;
-  let simulation: any;
-  let channel: any;
-  let userId: string;
-  let cursors: Map<string, { x: number; y: number }> = new Map();
-  let zoomBehavior: any;
-  let currentLevel = 2;
-  let inviteEmail: string;
-  let inviteRole: string;
-  let currentZoom = 1;
-  let status: number = 0;
-  let previousScale = 1;
-  console.log('MindMap.svelte');
-
-  function updateVisualization() {
-    if (!svg || nodes.length === 0) return;
-
-    const visibleNodes = nodes.filter(node => {
-      const depth = getNodeDepth(node);
-      return depth < currentLevel;
-    });
-
-    const visibleLinks = links.filter(link => {
-      const sourceDepth = getNodeDepth(nodes.find(n => n.id === link.source));
-      const targetDepth = getNodeDepth(nodes.find(n => n.id === link.target));
-      return sourceDepth < currentLevel - 1 && targetDepth < currentLevel;
-    });
-
-    const svgElement = d3.select(svg);
-    svgElement.selectAll('*').remove();
-
-    const g = svgElement.append('g');
-
-    const processedLinks = visibleLinks.map(link => ({
-      source: nodes.find(n => n.id === (typeof link.source === 'string' ? link.source : link.source.id)),
-      target: nodes.find(n => n.id === (typeof link.target === 'string' ? link.target : link.target.id))
-    })).filter(link => link.source && link.target);
-
-    const linkElements = g.append('g')
-      .selectAll('line')
-      .data(processedLinks)
-      .join('line')
-      .attr('stroke', '#999')
-      .attr('stroke-width', 2);
-
-    // Draw nodes
-    const nodeElements = g.append('g')
-      .selectAll('g')
-      .data(visibleNodes)
-      .join('g')
-      .call(d3.drag<SVGGElement, Node>()
-        .on('start', dragStarted)
-        .on('drag', dragged)
-        .on('end', dragended));
-
-    nodeElements.append('circle')
-      .attr('r', 30)
-      .attr('fill', 'white')
-      .attr('stroke', '#666')
-      .attr('stroke-width', 2);
-
-    nodeElements.append('text')
-      .text(d => d.content)
-      .attr('text-anchor', 'middle')
-      .attr('dy', '.3em')
-      .attr('fill', '#333');
-
-    // Add hover menu
-    const hoverGroup = nodeElements.append('g')
-      .attr('class', 'hover-icons')
-      .style('opacity', 0)
-      .style('pointer-events', 'none');
-
-    hoverGroup.selectAll('text')
-      .data(d => [{
-        text: '+',
-        x: 15,
-        action: () => addChild(d)
-      }, {
-        text: '✖',
-        x: 35,
-        action: () => deleteNode(d)
-      }, {
-        text: '✎',
-        x: 55,
-        action: () => editNode(d)
-      }])
-      .join('text')
-      .attr('x', d => d.x)
-      .attr('dy', 30)
-      .text(d => d.text)
-      .on('click', (event, d) => {
-        event.stopPropagation();
-        d.action();
-      });
-
-    // Add hover effects
-    nodeElements.on('mouseover', function() {
-      d3.select(this)
-        .select('.hover-icons')
-        .style('pointer-events', 'all')
-        .transition()
-        .duration(300)
-        .style('opacity', 1);
-    })
-    .on('mouseout', function(event) {
-      const hoverGroup = d3.select(this).select('.hover-icons');
-      const bbox = (hoverGroup.node() as HTMLElement).getBoundingClientRect();
-
-      if (event.relatedTarget && !(hoverGroup.node() as HTMLElement).contains(event.relatedTarget as globalThis.Node)) {
-        if (event.pageX < bbox.left || event.pageX > bbox.right ||
-            event.pageY < bbox.top || event.pageY > bbox.bottom) {
-          hoverGroup
-            .transition()
-            .duration(300)
-            .style('opacity', 0)
-            .on('end', () => hoverGroup.style('pointer-events', 'none'));
-        }
-      }
-    });
-
-    simulation = d3.forceSimulation(visibleNodes)
-      .force('link', d3.forceLink(processedLinks).id((d: any) => d.id).distance(150))
-      .force('charge', d3.forceManyBody().strength(-800))
-      .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(50))
-      .on('tick', () => {
-        nodeElements.attr('transform', d => `translate(${d.x},${d.y})`);
-        
-        linkElements
-          .attr('x1', d => d.source.x)
-          .attr('y1', d => d.source.y)
-          .attr('x2', d => d.target.x)
-          .attr('y2', d => d.target.y);
-      });
-
-    zoomBehavior = d3.zoom()
-      .scaleExtent([0.1, 3])
-      .on('zoom', handleZoom);
-
-    svgElement.call(zoomBehavior);
-  }
-
-  function handleZoom(event: any) {
-    const transform = event.transform;
-    d3.select(svg).select('g').attr("transform", transform);
-    currentZoom = transform.k;
-    
-    // Update level based on zoom scale
-    if (transform.k <= 0.5) {
-        currentLevel = 1;
-    } else if (transform.k <= 0.75) {
-        currentLevel = 2;
-    } else if (transform.k <= 1.0) {
-        currentLevel = 3;
-    } else if (transform.k <= 1.25) {
-        currentLevel = 4;
-    } else {
-        currentLevel = 5;
-    }
-    
-    console.log('Zoom scale:', transform.k.toFixed(2), 'Level:', currentLevel);
-    // updateVisualization();
-  }
-
-  function dragStarted(event: any) {
-    if (!event.active) simulation.alphaTarget(0.3).restart();
-  }
-
-  function dragged(event: any) {
-    event.subject.x = event.x;
-    event.subject.y = event.y;
-    
-    sendWebSocketMessage(channel, 'node_move', {
-      id: event.subject.id,
-      x: event.x,
-      y: event.y
-    }, userId, mindmapId);
-  }
-
-  async function dragended(event: any) {
-    if (!event.active) simulation.alphaTarget(0);
-
-    try {
-      await supabase
-        .from('mindmap_nodes')
-        .update({
-          position_x: event.subject.x,
-          position_y: event.subject.y
-        })
-        .eq('id', event.subject.id)
-        .eq('mindmap_id', mindmapId);
-
-      sendWebSocketMessage(channel, 'node_update', {
-        id: event.subject.id,
-        x: event.subject.x,
-        y: event.subject.y
-      }, userId, mindmapId);
-    } catch (err) {
-      console.error('Error updating node position:', err);
-    }
-  }
-
-  async function addChild(parent: Node) {
-    const newNodeContent = prompt('Enter the content for the new node:');
-    if (newNodeContent) {
-      try {
-        const { data: newNode, error } = await supabase
-          .from('mindmap_nodes')
-          .insert({
-            content: newNodeContent,
-            mindmap_id: mindmapId,
-            parent_id: parent.id
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-
-        nodes = [...nodes, newNode];
-        links = [...links, { source: parent.id, target: newNode.id }];
-
-        sendWebSocketMessage(channel, 'node_add', newNode, userId, mindmapId);
-        updateVisualization();
-      } catch (err) {
-        console.error('Error adding new node:', err);
-      }
-    }
-  }
-
-  async function deleteNode(node: Node) {
-    if (confirm('Are you sure you want to delete this node?')) {
-      try {
-        const { error } = await supabase
-          .from('mindmap_nodes')
-          .delete()
-          .eq('id', node.id)
-          .eq('mindmap_id', mindmapId);
-
-        if (error) throw error;
-
-        nodes = nodes.filter(n => n.id !== node.id);
-        links = links.filter(l => l.source !== node.id && l.target !== node.id);
-
-        sendWebSocketMessage(channel, 'node_delete', { id: node.id }, userId, mindmapId);
-        updateVisualization();
-      } catch (err) {
-        console.error('Error deleting node:', err);
-      }
-    }
-  }
-
-  async function editNode(node: Node) {
-    const newContent = prompt('Edit node content:', node.content);
-    if (newContent !== null && newContent !== node.content) {
-      try {
-        const { error } = await supabase
-          .from('mindmap_nodes')
-          .update({ content: newContent })
-          .eq('id', node.id)
-          .eq('mindmap_id', mindmapId);
-
-        if (error) throw error;
-
-        node.content = newContent;
-        nodes = [...nodes];
-
-        sendWebSocketMessage(channel, 'node_update', { id: node.id, content: newContent }, userId, mindmapId);
-        updateVisualization();
-      } catch (err) {
-        console.error('Error updating node content:', err);
-      }
-    }
-  }
-
-  onMount(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    userId = user?.id || 'anonymous';
-
-    channel = await createMindmapWebSocket(mindmapId, {
-      onNodeMove: (payload) => {
-        const nodeIndex = nodes.findIndex(n => n.id === payload.id);
-        if (nodeIndex !== -1) {
-          nodes[nodeIndex].x = payload.x;
-          nodes[nodeIndex].y = payload.y;
-          nodes = [...nodes];
-          updateVisualization();
-        }
-      },
-      onNodeUpdate: (payload) => {
-        const nodeIndex = nodes.findIndex(n => n.id === payload.id);
-        if (nodeIndex !== -1) {
-          nodes[nodeIndex].x = payload.x;
-          nodes[nodeIndex].y = payload.y;
-          nodes[nodeIndex].content = payload.content;
-          nodes = [...nodes];
-          updateVisualization();
-        }
-      },
-      onNodeAdd: (newNode) => {
-        if (!nodes.some(n => n.id === newNode.id)) {
-          nodes = [...nodes, newNode];
-          if (newNode.parent_id) {
-            links = [...links, { source: newNode.parent_id, target: newNode.id }];
-          }
-          updateVisualization();
-        }
-      },
-      onNodeDelete: (nodeId) => {
-        nodes = nodes.filter(n => n.id !== nodeId);
-        links = links.filter(l => l.source !== nodeId && l.target !== nodeId);
-        updateVisualization();
-      }
-    });
-
-    updateVisualization();
-  });
-
-  onDestroy(() => {
-    if (simulation) simulation.stop();
-    if (channel) channel.unsubscribe();
-  });
-
-  $: {
-    if (svg && nodes.length > 0) {
-      updateVisualization();
-    }
-  }
-
-  function update() {
-    if (!svg || !root) return;
-
-    const tree = d3.tree()
-      .nodeSize([60, 140])  // Fixed spacing between nodes
-      .separation(() => 1);  // Fixed separation
-
-    tree(root);
-
-    g.selectAll(".node").remove();
-    g.selectAll(".link").remove();
-
-    // Update links with straight lines
-    const links = g.selectAll(".link")
-      .data(root.links().filter(d => d.target.depth < currentLevel))
-      .join("line")
-      .attr("class", "link")
-      .attr("x1", d => d.source.y)
-      .attr("y1", d => d.source.x)
-      .attr("x2", d => d.target.y)
-      .attr("y2", d => d.target.x);
-
-    // Update nodes with rectangles
-    const nodes = g.selectAll(".node")
-      .data(root.descendants().filter(d => d.depth < currentLevel))
-      .join("g")
-      .attr("class", "node")
-      .attr("transform", d => `translate(${d.y},${d.x})`);
-
-    // Add rectangles for nodes
-    nodes.append("rect")
-      .attr("x", -50)
-      .attr("y", -15)
-      .attr("width", 100)
-      .attr("height", 30)
-      .attr("rx", 2)
-      .attr("ry", 2);
-
-    // Add text
-    nodes.append("text")
-      .attr("dy", "0.3em")
-      .attr("text-anchor", "middle")
-      .text(d => d.data.name)
-      .attr("class", "node-text");
-  }
-
-  // Update level change handler
-  function handleLevelChange(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    currentLevel = parseInt(select.value);
-    updateVisualization();
-  }
-
-  onMount(() => {
-    const svgElement = d3.select(svg)
-        .attr("viewBox", [0, 0, width, height])
-        .attr("preserveAspectRatio", "xMidYMid meet");
-
-    g = svgElement.append("g")
-        .attr("transform", `translate(0,${height / 2})`);
-
-        svgElement.call(zoom);
-  });
-
-  function handleZoomIn() {
-    if (!svg || !zoomBehavior) return;
-    
-    // Increase level (max 5)
-    currentLevel = Math.min(currentLevel + 1, 5);
-    console.log('Zoom In - New Level:', currentLevel);
-    
-    d3.select(svg)
-        .transition()
-        .duration(300)
-        .call(zoomBehavior.scaleBy, 1.2);
-    
-    updateVisualization();
-  }
-
-  function handleZoomOut() {
-    if (!svg || !zoomBehavior) return;
-    
-    // Decrease level (min 1)
-    currentLevel = Math.max(currentLevel - 1, 1);
-    console.log('Zoom Out - New Level:', currentLevel);
-    
-    d3.select(svg)
-        .transition()
-        .duration(300)
-        .call(zoomBehavior.scaleBy, 0.8);
-    
-    updateVisualization();
-  }
-
-  function resetZoom() {
-    if (!svg || !zoomBehavior) return;
-    d3.select(svg)
-      .transition()
-      .duration(300)
-      .call(
-        zoomBehavior.transform,
-        d3.zoomIdentity.translate(width / 4, height / 4).scale(1)
-      );
-  }
-
-  function getNodeDepth(node: Node): number {
-    let depth = 0;
-    let current = node;
-    
-    while (current.parent_id) {
-      depth++;
-      current = nodes.find(n => n.id === current.parent_id) || current;
-      if (!current) break;
-    }
-    
-    return depth;
-  }
-
-  const zoomLevels = {
-    0.5: 1,    // Level 1 only
-    0.75: 2,   // Level 1-2
-    1.0: 3,    // Level 1-3
-    1.25: 4,   // Level 1-4
-    1.5: 5     // Level 1-5
-  };
-
-  function updateNodesForZoom(scale: number) {
-    console.log('updateNodesForZoom');
-    if (!root) return;
-    status = 1;
-
-    // Log zoom information
-    console.log('Current zoom scale:', scale.toFixed(2));
-    console.log('Previous scale:', previousScale.toFixed(2));
-
-    // Get target depth and update level
-    const targetDepth = getTargetDepth(scale);
-    console.log('Target depth:', targetDepth);
-    currentLevel = targetDepth;
-    
-    if (scale < previousScale) {
-        console.log('Zooming OUT - Collapsing to level:', targetDepth);
-        collapseToLevel(root, 0, targetDepth);
-    } else {
-        console.log('Zooming IN - Expanding to level:', targetDepth);
-        expandToLevel(root, 0, targetDepth);
-    }
-    
-    previousScale = scale;
-    updateVisualization();
-  }
-
-  function getTargetDepth(scale: number): number {
-    let depth;
-    if (scale <= 0.5) depth = 1;
-    else if (scale <= 0.75) depth = 2;
-    else if (scale <= 1.0) depth = 3;
-    else if (scale <= 1.25) depth = 4;
-    else depth = 5;
-    
-    console.log('Scale:', scale.toFixed(2), '-> Depth:', depth);
-    return depth;
-  }
-
-  const zoom = d3.zoom()
-    .scaleExtent([0.5, 1.5])
-    .on("zoom", (event) => {
-        g.attr("transform", event.transform);
-        updateNodesForZoom(event.transform.k);
-    });
-
-  function collapseToLevel(node: any, depth: number, maxDepth: number) {
-    if (!node) return;
-    if (depth >= maxDepth && node.children) {
-        node._children = node.children;
-        node.children = null;
-    }
-    if (node.children) {
-        node.children.forEach((child: any) => collapseToLevel(child, depth + 1, maxDepth));
-    }
-  }
-
-  function expandToLevel(node: any, depth: number, maxDepth: number) {
-    if (!node) return;
-    if (depth < maxDepth && node._children) {
-        node.children = node._children;
-        node._children = null;
-    }
-    if (node.children) {
-        node.children.forEach((child: any) => expandToLevel(child, depth + 1, maxDepth));
+<script context="module" lang="ts">
+  declare global {
+    interface Window {
+      d3: any;
+      jQuery: any;
     }
   }
 </script>
 
-<div class="container">
-  <div class="controls">
-    <div class="control-group">
-      <div class="zoom-controls">
-        <button class="control-btn" on:click={handleZoomIn}>+</button>
-        <span class="zoom-level">{(currentZoom * 100).toFixed(0)}%</span>
-        <button class="control-btn" on:click={handleZoomOut}>-</button>
-        <button class="control-btn" on:click={resetZoom}>Reset</button>
-      </div>
-      <div class="level-controls">
-        <label for="level-select">Level:</label>
-        <select 
-          id="level-select" 
-          bind:value={currentLevel}
-          on:change={handleLevelChange}
-          class="level-select"
-        >
-          {#each Array(5) as _, i}
-            <option value={i + 1}>{i + 1}</option>
-          {/each}
-        </select>
-      </div>
+<svelte:head>
+  <script src="https://d3js.org/d3.v3.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <link href="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css" rel="stylesheet">
+  <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js"></script>
+</svelte:head>
+
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
+
+  let width = 1000;
+  let height = 800;
+  let selectedNode: any = null;
+  let currentLayout = 'horizontal';
+  let svg: any;
+  let force: any;
+  let isLoaded = false;
+
+  let root = {
+    "name": "Root",
+    "children": [
+      { "name": "Child 1", "children": [], "id": 1 },
+      { "name": "Child 2", "children": [], "id": 2 }
+    ],
+    "id": 0
+  };
+
+  onMount(async () => {
+    // Wait for D3 and other dependencies to load
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    if (browser && window.d3) {
+      width = window.innerWidth;
+      height = window.innerHeight;
+
+      force = window.d3.layout.force()
+        .size([width, height])
+        .charge(-1000)
+        .linkDistance(100)
+        .gravity(0.1)
+        .on("tick", tick);
+
+      svg = window.d3.select("#chart").append("svg")
+        .attr("width", width)
+        .attr("height", height)
+        .append("g")
+        .attr("transform", "translate(40,0)");
+
+      isLoaded = true;
+      update();
+    }
+  });
+
+  function update() {
+    if (!svg) return;
+    const nodes = flatten(root);
+    const links = window.d3.layout.tree().links(nodes);
+
+    force.nodes(nodes)
+      .links(links)
+      .start();
+
+    const link = svg.selectAll(".link")
+      .data(links, (d: any) => d.target.id);
+
+    link.enter().insert("path", ".node")
+      .attr("class", "link");
+    link.exit().remove();
+
+    const node = svg.selectAll(".node")
+      .data(nodes, (d: any) => d.id);
+
+    const nodeEnter = node.enter().append("g")
+      .attr("class", "node")
+      .call(force.drag);
+
+    nodeEnter.append("circle")
+      .attr("r", 10);
+
+    nodeEnter.append("foreignObject")
+      .attr("width", 200)
+      .attr("height", 100)
+      .attr("x", 12)
+      .attr("y", -25)
+      .append("xhtml:div")
+      .style("font", "14px sans-serif")
+      .html((d: any) => d.richContent || d.name);
+
+    addNodeControls(nodeEnter);
+
+    node.select("foreignObject div")
+      .html((d: any) => d.richContent || d.name);
+
+    node.exit().remove();
+  }
+
+  function tick() {
+    if (currentLayout === 'horizontal') {
+      svg.selectAll(".node").each((d: any) => {
+        d.y = Math.max(50, Math.min(height - 50, d.y));
+        d.x = d.depth * 180 + 60;
+      });
+    } else {
+      svg.selectAll(".node").each((d: any) => {
+        d.x = Math.max(50, Math.min(width - 50, d.x));
+        d.y = d.depth * 180 + 60;
+      });
+    }
+
+    svg.selectAll(".link").attr("d", (d: any) =>
+      `M${d.source.x},${d.source.y}L${d.target.x},${d.target.y}`
+    );
+
+    svg.selectAll(".node").attr("transform", (d: any) =>
+      `translate(${d.x},${d.y})`
+    );
+  }
+
+  function flatten(root: any) {
+    const nodes: any[] = [];
+    
+    function recurse(node: any, depth: number, parent: any) {
+      node.depth = depth;
+      node.parent = parent;
+      nodes.push(node);
+      if (node.children) {
+        node.children.forEach((child: any) => {
+          recurse(child, depth + 1, node);
+        });
+      }
+    }
+    
+    recurse(root, 0, null);
+    return nodes;
+  }
+
+  function showMenu(event: MouseEvent, d: any) {
+    selectedNode = d;
+    const menu = window.d3.select("#menu");
+    menu.style("display", "block")
+      .style("left", event.pageX + "px")
+      .style("top", event.pageY + "px");
+  }
+
+  function hideMenu() {
+    window.d3.select("#menu").style("display", "none");
+  }
+
+  function updateForceStrength(value: string) {
+    force.linkDistance(Number(value))
+      .start();
+  }
+
+  function addChild() {
+    if (selectedNode) {
+      if (!selectedNode.children) {
+        selectedNode.children = [];
+      }
+      const newNode = {
+        "name": "New Node",
+        "children": [],
+        "id": Date.now()
+      };
+      selectedNode.children.push(newNode);
+      update();
+      hideMenu();
+    }
+  }
+
+  function deleteNode() {
+    if (selectedNode && selectedNode.parent) {
+      const parent = selectedNode.parent;
+      parent.children = parent.children.filter((child: any) => child !== selectedNode);
+      update();
+      hideMenu();
+    }
+  }
+
+  function editNode() {
+    if (selectedNode) {
+      const content = selectedNode.richContent || selectedNode.name;
+      window.d3.select("#editDialog").style("display", "block");
+      
+      window.jQuery('#summernote').summernote({
+        height: 200,
+        toolbar: [
+          ['style', ['bold', 'italic', 'underline', 'clear']],
+          ['font', ['fontsize','strikethrough', 'superscript', 'subscript']],
+          ['color', ['color']],
+          ['para', ['ul', 'ol', 'paragraph']],
+          ['height', ['height']],
+          ['insert', ['link', 'picture', 'video']],
+          ['misc', ['codeview']]
+        ]
+      });
+      
+      window.jQuery('#summernote').summernote('code', content);
+    }
+  }
+
+  function saveEdit() {
+    if (selectedNode) {
+      const content = window.jQuery('#summernote').summernote('code');
+      selectedNode.richContent = content;
+      selectedNode.name = window.jQuery(content).text() || "Empty Node";
+      update();
+      closeEdit();
+    }
+  }
+
+  function closeEdit() {
+    window.jQuery('#summernote').summernote('destroy');
+    window.d3.select("#editDialog").style("display", "none");
+  }
+
+  function setLayout(type: string) {
+    currentLayout = type;
+    force.stop();
+
+    if (type === 'horizontal') {
+      force
+        .gravity(0.1)
+        .charge(-1000)
+        .linkDistance(100)
+        .size([width, height]);
+
+      const nodes = flatten(root);
+      nodes.forEach((d: any, i: number) => {
+        d.x = d.depth * 180;
+        d.y = (height/2) + (i - nodes.length/2) * 50;
+      });
+    } else {
+      force
+        .gravity(0.3)
+        .charge(-800)
+        .linkDistance(80)
+        .size([width, height]);
+
+      const nodes = flatten(root);
+      nodes.forEach((d: any, i: number) => {
+        d.y = d.depth * 180;
+        d.x = (width/2) + (i - nodes.length/2) * 50;
+      });
+    }
+
+    update();
+    force.start();
+  }
+
+  function highlightParentLinks(d: any) {
+    svg.selectAll(".link")
+      .classed("highlighted", (l: any) => {
+        let current = d;
+        while (current.parent) {
+          if (l.source === current.parent && l.target === current) {
+            return true;
+          }
+          current = current.parent;
+        }
+        return false;
+      });
+  }
+
+  function resetHighlight() {
+    svg.selectAll(".link")
+      .classed("highlighted", false);
+  }
+
+  function addNodeControls(nodeEnter: any) {
+    const controls = nodeEnter.append("g")
+      .attr("class", "node-controls");
+
+    nodeEnter
+      .on("mouseover", highlightParentLinks)
+      .on("mouseout", resetHighlight)
+      .on("click", (d: any) => showMenu(window.d3.event, d));
+
+    const controlData = [
+      { angle: 20, icon: "+", action: addChild, class: "add" },
+      { angle: 260, icon: "✎", action: editNode, class: "edit" },
+      { angle: 140, icon: "\uf2ed", action: deleteNode, class: "delete" }
+    ];
+
+    controlData.forEach((ctrl) => {
+      const x = Math.cos(ctrl.angle * Math.PI / 180) * 25;
+      const y = Math.sin(ctrl.angle * Math.PI / 180) * 25;
+
+      controls.append("circle")
+        .attr("class", `control-button ${ctrl.class}`)
+        .attr("r", 12)
+        .attr("cx", x)
+        .attr("cy", y)
+        .on("click", (d: any) => {
+          window.d3.event.stopPropagation();
+          selectedNode = d;
+          ctrl.action();
+        });
+
+      controls.append("text")
+        .attr("class", `control-icon ${ctrl.class}`)
+        .attr("x", x)
+        .attr("y", y)
+        .attr("text-anchor", "middle")
+        .attr("dominant-baseline", "central")
+        .text(ctrl.icon);
+    });
+  }
+</script>
+
+<div id="chart" style="width: 100%; height: 100vh;"></div>
+{#if isLoaded}
+  <div id="menu">
+    <button on:click={addChild}>Add Child</button>
+    <button on:click={deleteNode}>Delete Node</button>
+    <button on:click={editNode}>Edit Node</button>
+  </div>
+  <div id="layoutMenu">
+    <button on:click={() => setLayout('horizontal')}>Horizontal</button>
+    <button on:click={() => setLayout('vertical')}>Vertical</button>
+    <div>
+      <label>Force Strength:</label>
+      <input 
+        type="range" 
+        min="10" 
+        max="300" 
+        value="100" 
+        on:input={(e) => updateForceStrength(e.currentTarget.value)}
+      >
     </div>
   </div>
-  <svg
-    bind:this={svg}
-    {width}
-    {height}
-    viewBox="0 0 {width} {height}"
-    class="w-full h-full"
-  />
+{/if}
+
+<div id="editDialog" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border: 1px solid #ccc; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000;">
+  <div id="summernote"></div>
+  <button on:click={saveEdit}>Save</button>
+  <button on:click={closeEdit}>Cancel</button>
 </div>
 
 <style>
-  svg {
-    cursor: grab;
+  :global(.link) {
+    fill: none;
+    stroke: #9ecae1;
+    stroke-width: 1.5px;
   }
-  svg:active {
-    cursor: grabbing;
-  }
-  .hover-icons {
-    pointer-events: all;
-    transition: opacity 0.4s;
-    padding: 10px;
-  }
-  .hover-icons text {
+
+  :global(.node circle) {
     cursor: pointer;
-    font-size: 16px;
-    pointer-events: all;
-    fill: #666;
-  }
-  .hover-icons text:hover {
-    fill: #3182bd;
-  }
-  .node rect {
     fill: white;
     stroke: #3182bd;
     stroke-width: 1.5px;
   }
 
-  .node-text {
+  :global(.node text) {
     font: 12px sans-serif;
     pointer-events: none;
   }
 
-  .link {
-    stroke: #ccc;
+  :global(.node-controls) {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  :global(.node:hover .node-controls) {
+    opacity: 1;
+  }
+
+  :global(.control-button) {
+    cursor: pointer;
+    fill: white;
+    stroke: #3182bd;
     stroke-width: 1.5px;
   }
 
-  .invitation-bar {
-    width: 100%;
-    padding: 12px 20px;
-    background-color: white;
-    border-bottom: 1px solid #e5e7eb;
+  :global(.control-button:hover) {
+    fill: #3182bd;
   }
 
-  .invite-form {
-    max-width: 600px;
-    margin: 0 auto;
-    display: flex;
-    gap: 12px;
-    align-items: center;
+  :global(.control-icon) {
+    font-family: "Font Awesome 5 Free";
+    font-weight: 900;
+    font-size: 12px;
+    fill: #3182bd;
   }
 
-  .invite-input {
-    flex: 1;
-    padding: 6px 12px;
-    border: 1px solid #e5e7eb;
-    border-radius: 4px;
+  :global(.control-button:hover + .control-icon) {
+    fill: white;
   }
 
-  .role-select {
-    padding: 6px 12px;
-    border: 1px solid #e5e7eb;
-    border-radius: 4px;
+  :global(.control-button.add) { stroke: #28a745; }
+  :global(.control-button.edit) { stroke: #3182bd; }
+  :global(.control-button.delete) { stroke: #dc3545; }
+  
+  :global(.control-button.add:hover) { fill: #28a745; }
+  :global(.control-button.edit:hover) { fill: #3182bd; }
+  :global(.control-button.delete:hover) { fill: #dc3545; }
+  
+  :global(.control-icon.add) { fill: #28a745; }
+  :global(.control-icon.edit) { fill: #3182bd; }
+  :global(.control-icon.delete) { fill: #dc3545; }
+
+  :global(.link.highlighted) {
+    stroke: purple;
+    stroke-width: 2.5px
   }
 
-  .invite-button {
-    padding: 6px 16px;
-    background-color: #3182ce;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-
-  .invite-button:hover {
-    background-color: #2c5282;
-  }
-
-  .container {
-    position: relative;
-    width: 100%;
-    height: 100%;
-  }
-
-  .controls {
+  #menu {
     position: absolute;
-    top: 20px;
-    right: 20px;
-    z-index: 10;
-  }
-
-  .control-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    display: none;
     background-color: white;
-    padding: 12px;
-    border-radius: 6px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border: 1px solid #ccc;
+    padding: 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    z-index: 1000;
   }
 
-  .zoom-controls, .level-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .control-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border: 1px solid #e5e7eb;
-    border-radius: 4px;
-    background-color: white;
-    color: var(--theme-color);
+  #menu button {
+    display: block;
+    width: 100%;
+    margin: 5px 0;
+    padding: 5px;
     cursor: pointer;
-    transition: all 0.2s;
   }
 
-  .level-select {
-    padding: 4px 8px;
-    border: 1px solid #e5e7eb;
-    border-radius: 4px;
+  #layoutMenu {
+    position: fixed;
+    top: 10px;
+    right: 10px;
     background-color: white;
-    color: #374151;
+    border: 1px solid #ccc;
+    padding: 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  }
+
+  #layoutMenu button {
+    margin: 5px;
+    padding: 5px 10px;
+  }
+
+  :global(body) {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  #chart {
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
   }
 </style>
