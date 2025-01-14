@@ -35,6 +35,7 @@
   let zoomLevel = 100;
   let currentLevel = 1;
   let zoomBehavior: any;
+  let g: any;
 
   let root = {
     content: "Root",
@@ -329,15 +330,24 @@
   }
 
   function zoomIn() {
-    svg.transition().duration(300).call(zoomBehavior.scaleBy, 1.2);
+    const zoom = window.d3.behavior.zoom();
+    svg.transition()
+      .duration(300)
+      .call(zoom.scale(window.d3.behavior.zoom().scale() * 1.2).event);
   }
 
   function zoomOut() {
-    svg.transition().duration(300).call(zoomBehavior.scaleBy, 0.8);
+    const zoom = window.d3.behavior.zoom();
+    svg.transition()
+      .duration(300)
+      .call(zoom.scale(window.d3.behavior.zoom().scale() * 0.8).event);
   }
 
   function resetZoom() {
-    svg.transition().duration(300).call(zoomBehavior.transform, window.d3.zoomIdentity);
+    const zoom = window.d3.behavior.zoom();
+    svg.transition()
+      .duration(300)
+      .call(zoom.scale(1).event);
     zoomLevel = 100;
   }
 
@@ -363,6 +373,30 @@
       width = window.innerWidth;
       height = window.innerHeight;
 
+      // Create SVG
+      svg = window.d3.select("#chart")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+      // Create a group for the mindmap content
+      const container = svg.append("g")
+        .attr("transform", "translate(0,0)");
+
+      // Add zoom behavior
+      const zoom = window.d3.behavior.zoom()
+        .scaleExtent([0.1, 3])
+        .on("zoom", () => {
+          container.attr("transform", 
+            "translate(" + window.d3.event.translate + ")" + 
+            "scale(" + window.d3.event.scale + ")"
+          );
+          zoomLevel = Math.round(window.d3.event.scale * 100);
+        });
+
+      svg.call(zoom);
+
+      // Initialize force layout with the container
       force = window.d3.layout.force()
         .size([width, height])
         .charge(-1000)
@@ -370,17 +404,12 @@
         .gravity(0.1)
         .on("tick", tick);
 
-      svg = window.d3.select("#chart").append("svg")
-        .attr("width", width)
-        .attr("height", height)
-        .append("g")
-        .attr("transform", "translate(40,0)");
+      // Move all existing SVG operations to use container instead of svg
+      svg = container;  // Redirect svg variable to container for existing code
 
       isLoaded = true;
-      
       await initializeMindmap();
       await setupRealtimeSubscription();
-      initializeZoom();
     }
   });
 
