@@ -20,6 +20,7 @@
   import { browser } from '$app/environment';
   import { page } from '$app/stores';
   import { supabase } from '$lib/supabaseClient';
+  import { goto } from '$app/navigation';
 
   // Get mindmap ID from URL
   $: mindmapId = $page.params.id;
@@ -36,6 +37,7 @@
   let currentLevel = 1;
   let zoomBehavior: any;
   let g: any;
+  let error: string | null = null;
 
   let root = {
     content: "Root",
@@ -261,58 +263,72 @@
   }
 
   async function initializeMindmap() {
-    // Check if root node exists for this mindmap
-    const { data: existingNodes } = await supabase
-      .from('mindmap_nodes')
-      .select('*')
-      .eq('mindmap_id', mindmapId);
-
-    if (!existingNodes || existingNodes.length === 0) {
-      // Create root node
-      const { data: rootNode, error: rootError } = await supabase
-        .from('mindmap_nodes')
-        .insert({
-          id: Date.now(),
-          content: 'Root',
-          parent_id: null,
-          mindmap_id: mindmapId,
-          rich_content: null
-        })
-        .select()
+    try {
+      // Check if mindmap exists
+      const { data: mindmap, error: mindmapError } = await supabase
+        .from('mindmaps')
+        .select('*')
+        .eq('id', mindmapId)
         .single();
 
-      if (rootError) {
-        console.error('Error creating root node:', rootError);
-        return;
-      }
+      if (mindmapError) throw mindmapError;
+      if (!mindmap) throw new Error('Mindmap not found');
 
-      // Create two child nodes
-      const childNodes = [
-        {
-          content: 'Child 1',
-          parent_id: rootNode.id,
-          mindmap_id: mindmapId,
-          rich_content: null
-        },
-        {
-          content: 'Child 2',
-          parent_id: rootNode.id,
-          mindmap_id: mindmapId,
-          rich_content: null
-        }
-      ];
-
-      const { error: childError } = await supabase
+      // Check if nodes exist
+      const { data: existingNodes } = await supabase
         .from('mindmap_nodes')
-        .insert(childNodes);
+        .select('*')
+        .eq('mindmap_id', mindmapId);
 
-      if (childError) {
-        console.error('Error creating child nodes:', childError);
-        return;
+      if (!existingNodes || existingNodes.length === 0) {
+        // Create root node with explicit ID
+        const rootId = Date.now();
+        const { data: rootNode, error: rootError } = await supabase
+          .from('mindmap_nodes')
+          .insert([{
+            id: rootId,
+            content: 'Root',
+            parent_id: null,
+            mindmap_id: mindmapId,
+            rich_content: null
+          }])
+          .select()
+          .single();
+
+        if (rootError) throw rootError;
+
+        // Create child nodes with explicit IDs
+        const childNodes = [
+          {
+            id: rootId + 1,
+            content: 'Child 1',
+            parent_id: rootId,
+            mindmap_id: mindmapId,
+            rich_content: null
+          },
+          {
+            id: rootId + 2,
+            content: 'Child 2',
+            parent_id: rootId,
+            mindmap_id: mindmapId,
+            rich_content: null
+          }
+        ];
+
+        const { error: childError } = await supabase
+          .from('mindmap_nodes')
+          .insert(childNodes);
+
+        if (childError) throw childError;
       }
-    }
 
-    await loadNodes();
+      await loadNodes();
+      error = null;
+    } catch (e: any) {
+      console.error('Error initializing mindmap:', e);
+      error = e.message || 'Failed to load mindmap';
+      setTimeout(() => goto('/'), 3000);
+    }
   }
 
   function initializeZoom() {
