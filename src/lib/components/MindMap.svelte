@@ -34,7 +34,7 @@
   let isLoaded = false;
   let subscription: any;
   let zoomLevel = 100;
-  let currentLevel = 1;
+  let currentLevel = 5;
   let zoomBehavior: any;
   let g: any;
   let error: string | null = null;
