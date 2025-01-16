@@ -146,7 +146,6 @@
   }
 
   function removeNodeFromTree(nodeId: number) {
-    console.log('Removing node:', nodeId);
     
     function removeRecursive(parent: any): boolean {
       if (!parent.children) return false;
@@ -549,14 +548,94 @@
       
       window.jQuery('#summernote').summernote({
         height: 200,
+        callbacks: {
+          onImageUpload: async function(files) {
+            const editor = window.jQuery('#summernote');
+            let placeholder: HTMLImageElement;
+            
+            for (let file of files) {
+              try {
+                if (!file.type.startsWith('image/')) {
+                  alert('Please upload only image files.');
+                  continue;
+                }
+
+                if (file.size > 5 * 1024 * 1024) { // 5MB limit
+                  alert('Image size should be less than 5MB.');
+                  continue;
+                }
+
+                placeholder = document.createElement('img');
+                placeholder.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                editor.summernote('insertNode', placeholder);
+
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+                const filePath = `${mindmapId}/${fileName}`;
+
+                const { data, error: uploadError } = await supabase.storage
+                  .from('mindmap-images')
+                  .upload(filePath, file, {
+                    cacheControl: '3600',
+                    upsert: false
+                  });
+                
+                if (uploadError) throw uploadError;
+
+                const { data: { publicUrl } } = supabase.storage
+                  .from('mindmap-images')
+                  .getPublicUrl(filePath);
+
+                const image = document.createElement('img');
+                image.src = publicUrl;
+                image.style.maxWidth = '100%';
+                
+                image.onload = () => {
+                  window.jQuery(placeholder).replaceWith(image);
+                };
+
+                image.onerror = () => {
+                  window.jQuery(placeholder).remove();
+                  alert('Failed to load the uploaded image.');
+                  
+                  // Cleanup failed upload
+                  supabase.storage
+                    .from('mindmap-images')
+                    .remove([filePath])
+                    .then(({ error }) => {
+                      if (error) console.error('Failed to cleanup:', error);
+                    });
+                };
+
+              } catch (error) {
+                console.error('Error uploading image:', error);
+                window.jQuery(placeholder)?.remove();
+                alert('Failed to upload image. Please try again.');
+              }
+            }
+          },
+          onMediaDelete: async function(target) {
+            try {
+              const src = target[0].src;
+              if (src.includes('mindmap-images')) {
+                const path = src.split('mindmap-images/')[1];
+                await supabase.storage
+                  .from('mindmap-images')
+                  .remove([path]);
+              }
+            } catch (error) {
+              console.error('Error deleting image:', error);
+            }
+          }
+        },
         toolbar: [
-          ['style', ['bold', 'italic', 'underline', 'clear']],
-          ['font', ['fontsize','strikethrough', 'superscript', 'subscript']],
+          ['style', ['style']],
+          ['font', ['bold', 'underline', 'clear']],
           ['color', ['color']],
           ['para', ['ul', 'ol', 'paragraph']],
-          ['height', ['height']],
-          ['insert', ['link', 'picture', 'video']],
-          ['misc', ['codeview']]
+          ['table', ['table']],
+          ['insert', ['link', 'picture']],
+          ['view', ['fullscreen', 'codeview', 'help']]
         ]
       });
       
@@ -716,11 +795,15 @@
     </div>
   {/if}
 
-<div id="editDialog" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border: 1px solid #ccc; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000;">
-  <div id="summernote"></div>
-  <button on:click={saveEdit}>Save</button>
-    <button on:click={closeEdit}>Cancel</button>
+<div id="editDialog" style="display: none;" class="editor-dialog">
+  <div class="editor-content">
+    <div id="summernote"></div>
+    <div class="dialog-buttons">
+      <button on:click={saveEdit}>Save</button>
+      <button on:click={closeEdit}>Cancel</button>
+    </div>
   </div>
+</div>
 </div>
 
 <style>
@@ -912,5 +995,39 @@
   button.active {
     background: #3182bd;
     color: white;
+  }
+
+  .editor-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    padding: 20px;
+    border-radius: 4px;
+    z-index: 1001; /* Higher than overlay */
+    min-width: 600px;
+    max-width: 90%;
+    max-height: 90vh;
+    overflow: auto;
+  }
+
+  .editor-content {
+    position: relative;
+    z-index: 1002; /* Higher than dialog */
+  }
+
+  /* Override Summernote's modal z-index */
+  :global(.note-modal) {
+    z-index: 1003 !important;
+  }
+
+  :global(.modal-backdrop) {
+    z-index: 1002 !important;
+  }
+
+  /* Make sure dropdowns appear above everything */
+  :global(.note-dropdown-menu) {
+    z-index: 1004 !important;
   }
 </style>
