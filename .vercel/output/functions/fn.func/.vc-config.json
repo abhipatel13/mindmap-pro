@@ -1,8 +1,9 @@
 {
-	"runtime": "nodejs20.x",
-	"handler": ".svelte-kit/vercel-tmp/index.js",
-	"launcherType": "Nodejs",
-	"experimentalResponseStreaming": true,
+	"runtime": "edge",
+	"regions": [
+		"sfo1"
+	],
+	"entrypoint": "index.js",
 	"framework": {
 		"slug": "sveltekit",
 		"version": "2.15.1"
