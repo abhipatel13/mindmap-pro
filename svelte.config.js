@@ -1,26 +1,10 @@
-import { defineConfig } from 'vite';
-import { svelte } from '@sveltejs/vite-plugin-svelte';
+import adapter from '@sveltejs/adapter-vercel';
 
-const production = process.env.NODE_ENV === 'production';
-
-export default defineConfig({
-  plugins: [
-    svelte({
-      compilerOptions: {
-        dev: !production,
-        hydratable: !production,
-        legacy: {
-          componentApi: true          
-        }
-      }
-    })
-  ],
-  build: {
-    rollupOptions: {
-      output: {
-        compatModuleInterop: false,
-      },
-    },
-    target: 'esnext',
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+  kit: {
+    adapter: adapter()
   }
-});
+};
+
+export default config;
