@@ -39,6 +39,7 @@
   let g: any;
   let error: string | null = null;
   let previousScale = 1;
+  let autoLevelEnabled = true;
 
   let root = {
     content: "Root",
@@ -342,21 +343,22 @@
         );
         zoomLevel = Math.round(window.d3.event.scale * 100);
 
-        // Add level changes based on zoom
-        const zoomPercentage = zoomLevel;
-        let newLevel;
-        if (zoomPercentage <= 30) newLevel = 1;
-        else if (zoomPercentage <= 50) newLevel = 2;
-        else if (zoomPercentage <= 70) newLevel = 3;
-        else if (zoomPercentage <= 90) newLevel = 4;
-        else newLevel = 5;
+        // Only update levels if auto-level is enabled
+        if (autoLevelEnabled) {
+          const zoomPercentage = zoomLevel;
+          let newLevel;
+          if (zoomPercentage <= 30) newLevel = 1;
+          else if (zoomPercentage <= 50) newLevel = 2;
+          else if (zoomPercentage <= 70) newLevel = 3;
+          else if (zoomPercentage <= 90) newLevel = 4;
+          else newLevel = 5;
 
-        // Only update if level changed
-        if (currentLevel !== newLevel) {
-          currentLevel = newLevel;
-          console.log(`Zoom: ${zoomPercentage}%, Level: ${newLevel}`);
-          collapseToLevel(root, currentLevel);
-          update();
+          if (currentLevel !== newLevel) {
+            currentLevel = newLevel;
+            console.log(`Zoom: ${zoomPercentage}%, Level: ${newLevel}`);
+            collapseToLevel(root, currentLevel);
+            update();
+          }
         }
       });
 
@@ -504,21 +506,22 @@
           );
           zoomLevel = Math.round(window.d3.event.scale * 100);
 
-          // Add level changes based on zoom
-          const zoomPercentage = zoomLevel;
-          let newLevel;
-          if (zoomPercentage <= 30) newLevel = 1;
-          else if (zoomPercentage <= 50) newLevel = 2;
-          else if (zoomPercentage <= 70) newLevel = 3;
-          else if (zoomPercentage <= 90) newLevel = 4;
-          else newLevel = 5;
+          // Only update levels if auto-level is enabled
+          if (autoLevelEnabled) {
+            const zoomPercentage = zoomLevel;
+            let newLevel;
+            if (zoomPercentage <= 30) newLevel = 1;
+            else if (zoomPercentage <= 50) newLevel = 2;
+            else if (zoomPercentage <= 70) newLevel = 3;
+            else if (zoomPercentage <= 90) newLevel = 4;
+            else newLevel = 5;
 
-          // Only update if level changed
-          if (currentLevel !== newLevel) {
-            currentLevel = newLevel;
-            console.log(`Zoom: ${zoomPercentage}%, Level: ${newLevel}`);
-            collapseToLevel(root, currentLevel);
-            update();
+            if (currentLevel !== newLevel) {
+              currentLevel = newLevel;
+              console.log(`Zoom: ${zoomPercentage}%, Level: ${newLevel}`);
+              collapseToLevel(root, currentLevel);
+              update();
+            }
           }
         });
 
@@ -884,6 +887,14 @@
               <span class="zoom-level">{zoomLevel}%</span>
               <button on:click={zoomOut}><i class="fas fa-minus"></i></button>
               <button on:click={resetZoom}><i class="fas fa-undo"></i></button>
+              <label class="toggle-container">
+                <input 
+                  type="checkbox" 
+                  bind:checked={autoLevelEnabled}
+                  title="Toggle auto-level based on zoom"
+                >
+                <span class="toggle-label">Auto-Level</span>
+              </label>
             </div>
 
 
@@ -1155,5 +1166,49 @@
   /* Make sure dropdowns appear above everything */
   :global(.note-dropdown-menu) {
     z-index: 1004 !important;
+  }
+
+  .toggle-container {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 15px;
+    cursor: pointer;
+  }
+
+  .toggle-container input[type="checkbox"] {
+    appearance: none;
+    width: 40px;
+    height: 20px;
+    background: #ccc;
+    border-radius: 20px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+
+  .toggle-container input[type="checkbox"]:checked {
+    background: #3182bd;
+  }
+
+  .toggle-container input[type="checkbox"]::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    background: white;
+    transition: transform 0.3s;
+  }
+
+  .toggle-container input[type="checkbox"]:checked::before {
+    transform: translateX(20px);
+  }
+
+  .toggle-label {
+    margin-left: 8px;
+    font-size: 14px;
+    user-select: none;
   }
 </style>
