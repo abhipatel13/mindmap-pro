@@ -38,6 +38,7 @@
   let zoomBehavior: any;
   let g: any;
   let error: string | null = null;
+  let previousScale = 1;
 
   let root = {
     content: "Root",
@@ -192,6 +193,7 @@
       if (error) {
         console.error('Error adding node:', error);
         return;
+
       }
 
       // Immediately add node to local tree
@@ -331,43 +333,63 @@
   }
 
   function initializeZoom() {
-    zoomBehavior = window.d3.zoom()
+    zoomBehavior = window.d3.behavior.zoom()
       .scaleExtent([0.1, 3])
-      .on("zoom", handleZoom);
+      .on("zoom", () => {
+        container.attr("transform", 
+          "translate(" + window.d3.event.translate + ")" + 
+          "scale(" + window.d3.event.scale + ")"
+        );
+        zoomLevel = Math.round(window.d3.event.scale * 100);
+
+        // Add level changes based on zoom
+        const zoomPercentage = zoomLevel;
+        let newLevel;
+        if (zoomPercentage <= 30) newLevel = 1;
+        else if (zoomPercentage <= 50) newLevel = 2;
+        else if (zoomPercentage <= 70) newLevel = 3;
+        else if (zoomPercentage <= 90) newLevel = 4;
+        else newLevel = 5;
+
+        // Only update if level changed
+        if (currentLevel !== newLevel) {
+          currentLevel = newLevel;
+          console.log(`Zoom: ${zoomPercentage}%, Level: ${newLevel}`);
+          collapseToLevel(root, currentLevel);
+          update();
+        }
+      });
 
     svg.call(zoomBehavior);
   }
 
-  function handleZoom(event: any) {
-    const transform = event.transform;
-    svg.select("g").attr("transform", transform);
-    zoomLevel = Math.round(transform.k * 100);
-  }
-
   function zoomIn() {
-    if (!zoomBehavior) return;
-    const scale = zoomBehavior.scale() * 1.2;
-    const translate = zoomBehavior.translate();
+    const currentScale = zoomBehavior.scale();
+    const newScale = Math.min(currentScale * 1.2, 3);
+    const currentTranslate = zoomBehavior.translate();
+    
+    zoomBehavior.scale(newScale).translate(currentTranslate);
     svg.transition()
-      .duration(300)
-      .call(zoomBehavior.scale(scale).translate(translate).event);
+       .duration(300)
+       .call(zoomBehavior.event);
   }
 
   function zoomOut() {
-    if (!zoomBehavior) return;
-    const scale = zoomBehavior.scale() * 0.8;
-    const translate = zoomBehavior.translate();
+    const currentScale = zoomBehavior.scale();
+    const newScale = Math.max(currentScale * 0.8, 0.1);
+    const currentTranslate = zoomBehavior.translate();
+    
+    zoomBehavior.scale(newScale).translate(currentTranslate);
     svg.transition()
-      .duration(300)
-      .call(zoomBehavior.scale(scale).translate(translate).event);
+       .duration(300)
+       .call(zoomBehavior.event);
   }
 
   function resetZoom() {
-    if (!zoomBehavior) return;
+    zoomBehavior.scale(1).translate([0, 0]);
     svg.transition()
-      .duration(300)
-      .call(zoomBehavior.scale(1).translate([width/2, height/2]).event);
-    zoomLevel = 100;
+       .duration(300)
+       .call(zoomBehavior.event);
   }
 
   function setLevel(level: number) {
@@ -385,6 +407,79 @@
     update();
   }
 
+  function expand(node: any, depth: number, targetDepth: number) {
+    if (node._children && depth < targetDepth) {
+      node.children = node._children;
+      node._children = null;
+    }
+    if (node.children) {
+      node.children.forEach((child: any) => expand(child, depth + 1, targetDepth));
+    }
+  }
+
+  function collapse(node: any, depth: number, targetDepth: number) {
+    if (node.children && depth >= targetDepth) {
+      node._children = node.children;
+      node.children = null;
+    }
+    if (node.children) {
+      node.children.forEach((child: any) => collapse(child, depth + 1, targetDepth));
+    }
+  }
+
+  // Add helper function for expanding to specific level
+  function expandToLevel(node: any, targetLevel: number, currentLevel = 0) {
+    if (currentLevel < targetLevel) {
+      if (node._children) {
+        node.children = node._children;
+        node._children = null;
+      }
+      if (node.children) {
+        node.children.forEach(child => expandToLevel(child, targetLevel, currentLevel + 1));
+      }
+    }
+  }
+
+  // Add this function to handle node visibility
+  function updateVisibleNodes() {
+    const nodes = root.descendants();
+    nodes.forEach(node => {
+      if (node.depth >= currentLevel) {
+        node._children = node.children;
+        node.children = null;
+      } else if (node._children) {
+        node.children = node._children;
+        node._children = null;
+      }
+    });
+    update();
+  }
+
+  // Add this function to handle collapsing nodes
+  function collapseToLevel(node, level, currentDepth = 0) {
+    if (!node) return;
+
+    if (currentDepth >= level) {
+      // Collapse this node
+      if (node.children) {
+        node._children = node.children;
+        node.children = null;
+      }
+    } else {
+      // Expand this node
+      if (node._children) {
+        node.children = node._children;
+        node._children = null;
+      }
+      // Process children
+      if (node.children) {
+        node.children.forEach(child => 
+          collapseToLevel(child, level, currentDepth + 1)
+        );
+      }
+    }
+  }
+
   onMount(async () => {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -397,10 +492,10 @@
         .attr("width", width)
         .attr("height", height);
 
-      const container = svg.append("g");
+        const container = svg.append("g");
 
-      // Store zoom behavior
-      zoomBehavior = window.d3.behavior.zoom()
+
+        zoomBehavior = window.d3.behavior.zoom()
         .scaleExtent([0.1, 3])
         .on("zoom", () => {
           container.attr("transform", 
@@ -408,13 +503,29 @@
             "scale(" + window.d3.event.scale + ")"
           );
           zoomLevel = Math.round(window.d3.event.scale * 100);
+
+          // Add level changes based on zoom
+          const zoomPercentage = zoomLevel;
+          let newLevel;
+          if (zoomPercentage <= 30) newLevel = 1;
+          else if (zoomPercentage <= 50) newLevel = 2;
+          else if (zoomPercentage <= 70) newLevel = 3;
+          else if (zoomPercentage <= 90) newLevel = 4;
+          else newLevel = 5;
+
+          // Only update if level changed
+          if (currentLevel !== newLevel) {
+            currentLevel = newLevel;
+            console.log(`Zoom: ${zoomPercentage}%, Level: ${newLevel}`);
+            collapseToLevel(root, currentLevel);
+            update();
+          }
         });
 
       svg.call(zoomBehavior);
 
       // Use container for force layout
       svg = container;
-
       force = window.d3.layout.force()
         .size([width, height])
         .charge(-1000)
@@ -769,10 +880,10 @@
 
 
             <div class="zoom-controls">
-              <button on:click={zoomIn}>+</button>
-              <button on:click={zoomOut}>-</button>
-              <button on:click={resetZoom}>Reset</button>
-              <span class="zoom-level">Zoom: {zoomLevel}%</span>
+              <button on:click={zoomIn}><i class="fas fa-plus"></i></button>
+              <span class="zoom-level">{zoomLevel}%</span>
+              <button on:click={zoomOut}><i class="fas fa-minus"></i></button>
+              <button on:click={resetZoom}><i class="fas fa-undo"></i></button>
             </div>
 
 
@@ -953,21 +1064,36 @@
   }
 
   .zoom-controls {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: white;
+    padding: 10px;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
     display: flex;
+    gap: 10px;
     align-items: center;
-    gap: 8px;
   }
 
   .zoom-controls button {
-    padding: 5px 10px;
-    border: 1px solid #ccc;
-    background: white;
+    padding: 8px;
+    border: none;
+    background: #3182bd;
+    color: white;
+    border-radius: 4px;
     cursor: pointer;
-    height: 32px;
+    transition: background 0.2s;
+  }
+
+  .zoom-controls button:hover {
+    background: #225a84;
   }
 
   .zoom-level {
-    min-width: 80px;
+    min-width: 60px;
+    text-align: center;
+    font-weight: bold;
   }
 
   .level-control {
